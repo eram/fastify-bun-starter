@@ -6,77 +6,79 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Model
 
-- Code is written in TypeScript and run using vite-node with Deepkit type compiler support.
-- Code is run in dev and in prod using vite-node. We do not build a JS version of the code.
+- Code is written in TypeScript and run using Bun runtime with Deepkit type compiler support.
+- Code is run directly from TypeScript source files using Bun - no build step required.
 - In non-local environment, including prod, code is run on a docker image. Use npm run build to build the image. This also runs the unit tests as first stage and a vulnerability scan as last stage. Failing test should fail the build.
 - Use TDD when coding: always write test before fixing or changing the code and re-run the tests after changes.
 - Write code in such a way that tests pass cleanly without errors.
-- Code coverage is tracked using Vitest with V8 provider. Coverage reports in lcov format are generated in `./coverage/`.
-- **Coverage Limitations**: Due to Deepkit type compiler transformations, V8 coverage tracking does not work accurately. Coverage thresholds are disabled. This is a known limitation when combining custom Vite plugins with V8 coverage.
-- Coverage exclusions (automatic): test files (*.test.ts, *.spec.ts), mock files (**/__mocks__/**, **/mock/**), and index files (index.ts, index.js, etc.)
-- Coverage exclusions (manual): Use `/* v8 ignore start */` and `/* v8 ignore stop */` comments to exclude specific code blocks from coverage analysis.
+- Code coverage tracking with Bun's test runner (if enabled, coverage behavior may differ from Vitest).
 - Adding dependency libraries into `dependencies` in package.json is strictly prohibited. Needs explicit developer approval.
-- Code assumes Node.js >= 24 (see package.json engine field).
+- Code assumes Bun >= 1.0 (see package.json engine field).
 - You should never try to change files outside of the working folder (base folder of the project).
 - All the project config files (the files outside src) should not be changed without explicit developer approval.
+- Do not use imports from "bun:*" namespaces and Bun-specific globals. We keep strict adherence with nodejs >=24 APIs for backwards competability of the project codebase.
 
 ### TypeScript Configuration
 
 - Target: es2020
 - Module: ESNext
-- Module Resolution: bundler
-- Lib: ["es2020", "DOM"]
+- Module Resolution: bundler (allows extensionless imports for Bun's native TS execution)
+- Lib: ["es2020"]
 - Strict mode enabled
 - Deepkit reflection enabled (`"reflection": true` in tsconfig.json)
-- Experimental decorators enabled for Deepkit framework
 - Use Deepkit type annotations (MinLength, MaxLength, Positive, Email, Flag, etc.)
 
 ### Deepkit Framework
 
 - Uses @deepkit/app for application structure and dependency injection
-- Type compiler enabled via @deepkit/vite plugin in vitest.config.ts (shared with Vite)
+- Type compiler enabled via @deepkit/bun preload in bunfig.toml
 - CLI commands implemented with @cli.controller decorator
 - Runtime type validation using Deepkit's type system
 - Commands must implement the Command interface from @deepkit/app
 
 ### Testing Patterns
 
-- **Test Framework**: Vitest 3.2.4 (downgraded from 4.0 due to Windows compatibility issues)
-- **Assertions**: Vitest's `expect` API (Jest-compatible)
-- **Test Files**: `*.test.ts` files alongside source in src/ folder
-- **Unit Tests**: Use direct imports with mock dependencies (fast, run via Vitest)
-- **Integration Tests** (ci/ folder): Run via `script/run-ci-tests.js` using vite-node directly (not through Vitest due to env var inheritance issues)
-- **Environment Variable**: `deepkit_test_mode` is set by Vitest to prevent app auto-run during test imports
-- **Watch Mode**: Available via `npm run test:watch` for TDD workflows
-- **Test Organization**: Use `describe` and `test` from Vitest, `beforeEach`/`afterEach` for setup/teardown
-- Tests can be debugged using VSCode launch configurations
+- **Test Framework**: Node.js native test APIs (`node:test`) executed via Bun runtime
+- **Test Executor**: Bun's Node.js-compatible test runner (implements Node.js test runner APIs)
+- **Assertions**: Node.js strict assertions (`node:assert/strict`)
+- **Test Files**: `*.test.ts` files in src/ and ci/ folders
+- **Unit Tests** (src/): Direct imports with mock dependencies (fast, run via `bun test src`)
+- **Integration Tests** (ci/): CLI tests using child_process spawn (run via `bun test ci`)
+- **Test Imports**: Always import from `node:test` and `node:assert/strict` - no globals
+- **Watch Mode**: Available via `bun test --watch` for TDD workflows
+- **Test Organization**: Use `describe` and `test`, `beforeEach`/`afterEach` for setup/teardown
+- **No External Test Dependencies**: Uses Node.js built-in testing APIs (no Vitest/Jest needed)
+- **Debugging**: VSCode debugger available but stepping may be imprecise due to Deepkit's runtime type transformation
+  - Source maps enabled in tsconfig.json (`sourceMap: true`)
+  - Debug configurations include `smartStep` and `skipFiles` for better stepping
+  - For precise debugging, use console.log() or test-driven development approach
+  - Known limitation: Deepkit type compiler transforms code at runtime, affecting debugger accuracy
 
 ### Coding patterns
 
 - Never use `null` >> use `undefined` instead
 - Never use `any` >> use `unknown` instead
+- Do not use imports from "bun:*" namespaces - Bun globals are automatically available
 - Use Deepkit type annotations for type validation
 - Export app and command classes for testing
-- Use `deepkit_test_mode` environment variable check to prevent app auto-run during test imports
 - File naming uses kebab-case convention (e.g., run-tests.js, not run_tests.js) following Deepkit standards.
 
 ## Commands
 
 ### Testing
 
-- `npm test` - Run linter and all unit tests via Vitest
-- `npm run test:unit` - Run unit tests with coverage report
-- `npm run test:watch` - Run tests in watch mode for TDD (no coverage)
-- `npm run ci` - Run integration tests via vite-node (script/run-ci-tests.js)
-- `npx vitest run src/app.test.ts` - Run specific test file
+- `bun test` - Run all tests (unit + integration)
+- `bun run test` - Run linter and all tests
+- `bun run test:unit` - Run unit tests only (src/)
+- `bun run test:integration` - Run integration tests only (ci/)
+- `bun run test:watch` - Run tests in watch mode for TDD
+- `bun test src/app.test.ts` - Run specific test file
 - VSCode debugger can be used to debug tests (see .vscode/launch.json)
-- Coverage reports: `./coverage/lcov.info` (for VSCode Coverage Gutters extension)
-- **Note**: Coverage tracking is currently inaccurate due to Deepkit type compiler transformations
 
 ### Development
 
-- `npm run dev` - Run application in watch mode (hot-reload on file changes)
-- `npm run app` - Run application using vite-node
+- `npm run dev` - Run application with hot-reload on file changes (using Bun's --hot flag)
+- `npm run app` - Run application using Bun
 
 ### Building
 
@@ -117,10 +119,12 @@ Main application file with:
 
 #### 2. Test Infrastructure
 
-- **Unit Tests**: Fast tests using direct imports with Vitest, mock dependencies
-- **Integration Tests**: Full CLI behavior tests via script/run-ci-tests.js using vite-node and node:assert
-- **CI Test Runner**: Custom runner using util.parseArgs() with async/await pattern
-- **Coverage**: Vitest with V8 provider (note: limited accuracy due to Deepkit transformations)
+- **Unit Tests** (src/): Fast tests using direct imports with mock dependencies
+- **Integration Tests** (ci/): CLI behavior tests using child_process spawn to execute app commands
+- **Test APIs**: Node.js native test APIs (`node:test`, `node:assert/strict`)
+- **Test Executor**: Bun runtime with Node.js test runner compatibility
+- **Coverage**: Bun's built-in test coverage (if enabled)
+- **No External Dependencies**: Pure Node.js testing APIs, no Vitest/Jest required
 
 #### 3. Docker Build Strategy
 
@@ -133,19 +137,18 @@ Multi-stage Dockerfile with Wolfi OS base:
 
 #### 4. Development Workflow
 
-- vite-node for TypeScript execution with Deepkit type compiler
-- Deepkit Vite plugin (@deepkit/vite) with deepkitType() for runtime type transformation
-- VSCode debug configurations for debugging app and tests
+- Bun runtime for native TypeScript execution with Deepkit type compiler
+- Deepkit Bun preload (@deepkit/bun) configured in bunfig.toml for runtime type transformation
+- VSCode debug configurations for debugging app and tests with Bun
 - Git-based version management with conventional commits
 
 ### VSCode Debug Configurations
 
 Available debug configurations in .vscode/launch.json:
 
-1. **Debug Current File** - F5 on any .ts file to debug it
-2. **Debug Current File with Args** - Debug with command-line arguments
-3. **Debug app.ts** - Dedicated application debugging
-4. **Debug All Tests** - Debug the full test suite
+1. **Debug Current File with Bun** - Debug any .ts file with Bun runtime
+2. **Debug Current Test File with Bun** - Debug test files with Bun test runner
+3. **Debug app.ts with Bun** - Dedicated application debugging with Bun
 
 ### Version Management
 
@@ -160,7 +163,7 @@ Release process using script/release.js:
 
 ### Environment
 
-- Node.js 24+ required
-- Windows development environment (project at c:\src\eram\dk-test)
-- Git repository on master branch
-- Uses npm for package management
+- Bun 1.0+ required
+- Windows development environment
+- Git repository on main branch
+- Uses bun for package management (bun install, bun test, etc.)

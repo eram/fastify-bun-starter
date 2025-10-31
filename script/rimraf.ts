@@ -1,25 +1,33 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 /**
  * Simple rimraf utility for cleaning build artifacts
- * No external dependencies - uses only Node.js built-ins
+ * No external dependencies - uses only Node.js-compatible built-ins
  * Supports glob patterns and multiple paths
  */
 
 import { promises as fs } from 'node:fs';
 import { parseArgs } from 'node:util';
+import type { RmOptions } from 'node:fs';
 
-const isGlobPattern = (str) => /[*?{}[\]]/.test(str);
+const isGlobPattern = (str: string): boolean => /[*?{}[\]]/.test(str);
+
+interface RimrafOptions extends RmOptions {
+    recursive?: boolean;
+    force?: boolean;
+    maxRetries?: number;
+    retryDelay?: number;
+}
 
 /**
  * Recursively remove files/directories matching the pattern
- * @param {string} pattern - Path or glob pattern
- * @param {object} options - fs.rm options
- * @returns {Promise<number>} Number of items removed
  */
-async function rimraf(pattern, options = { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }) {
+async function rimraf(
+    pattern: string,
+    options: RimrafOptions = { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }
+): Promise<number> {
     try {
-        const matches = [];
+        const matches: string[] = [];
 
         // Check if pattern is a glob or direct path
         if (isGlobPattern(pattern)) {
@@ -45,14 +53,15 @@ async function rimraf(pattern, options = { recursive: true, force: true, maxRetr
 
         return matches.length;
     } catch (err) {
-        throw new Error(err.message || err);
+        const error = err as Error;
+        throw new Error(error.message || String(err));
     }
 }
 
 /**
  * Main entry point
  */
-async function main() {
+async function main(): Promise<void> {
     const { values, positionals } = parseArgs({
         options: {
             quiet: {
@@ -70,21 +79,21 @@ async function main() {
     });
 
     if (values.help || positionals.length === 0) {
-        console.log('Usage: node rimraf.js [--quiet|-q] <path> [...<path>]');
+        console.log('Usage: bun run script/rimraf.ts [--quiet|-q] <path> [...<path>]');
         console.log('');
         console.log('Options:');
         console.log('  --quiet, -q    Suppress output');
         console.log('  --help, -h     Show this help');
         console.log('');
         console.log('Examples:');
-        console.log('  node rimraf.js dist build');
-        console.log('  node rimraf.js "*.log" "*.tmp"');
-        console.log('  node rimraf.js -q coverage node_modules');
+        console.log('  bun run rimraf dist build');
+        console.log('  bun run rimraf "*.log" "*.tmp"');
+        console.log('  bun run rimraf -q coverage node_modules');
         process.exit(values.help ? 0 : 1);
     }
 
     let totalCount = 0;
-    const errors = [];
+    const errors: string[] = [];
 
     for (const pattern of positionals) {
         try {
@@ -116,7 +125,8 @@ async function main() {
                 console.log(`Removed ${count} item(s): ${pattern}`);
             }
         } catch (err) {
-            errors.push(`Error removing ${pattern}: ${err.message}`);
+            const error = err as Error;
+            errors.push(`Error removing ${pattern}: ${error.message}`);
         }
     }
 
@@ -136,7 +146,7 @@ async function main() {
     process.exit(0);
 }
 
-main().catch((err) => {
+main().catch((err: Error) => {
     console.error('Unexpected error:', err.message);
     process.exit(1);
 });

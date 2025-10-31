@@ -1,22 +1,24 @@
-import { beforeEach, describe, expect, test } from 'vitest';
+import { match, ok, strictEqual } from 'node:assert/strict';
+import { beforeEach, describe, test } from 'node:test';
+import { Logger } from '@deepkit/logger';
 import { app, TestCommand } from './app';
 
 describe('TestCommand', () => {
     test('class is exported and decorated', () => {
-        expect(TestCommand).toBeDefined();
-        expect(typeof TestCommand).toBe('function');
+        ok(TestCommand, 'TestCommand should be defined');
+        strictEqual(typeof TestCommand, 'function', 'TestCommand should be a function');
     });
 
     test('execute method exists with correct signature', () => {
         const cmd = new TestCommand();
-        expect(typeof cmd.execute).toBe('function');
+        strictEqual(typeof cmd.execute, 'function', 'execute should be a function');
     });
 });
 
 describe('app', () => {
     test('instance is exported and configured', () => {
-        expect(app).toBeDefined();
-        expect(app.setup).toBeDefined();
+        ok(app, 'app should be defined');
+        ok(app.setup, 'app.setup should be defined');
     });
 
     test('has test controller registered', async () => {
@@ -25,19 +27,19 @@ describe('app', () => {
 
         // Check if TestCommand is in the controllers
         const hasTestCommand = app.appModule.controllers.includes(TestCommand);
-        expect(hasTestCommand).toBe(true);
+        strictEqual(hasTestCommand, true, 'TestCommand should be in controllers');
     });
 });
 
 describe('TestCommand execution', () => {
     let logs: string[];
-    let mockLogger: Pick<import('@deepkit/logger').Logger, 'log'>;
+    let mockLogger: Logger;
 
     beforeEach(() => {
         logs = [];
         mockLogger = {
             log: (msg: string) => logs.push(msg),
-        };
+        } as unknown as Logger;
     });
 
     test('can be instantiated and executed with mock logger', async () => {
@@ -46,13 +48,13 @@ describe('TestCommand execution', () => {
 
         // Verify logs contain expected output
         const allLogs = logs.join('\n');
-        expect(allLogs).toMatch(/Deepkit Type System Test/);
-        expect(allLogs).toMatch(/Hello TestUser!/);
-        expect(allLogs).toMatch(/Count: 5/);
-        expect(allLogs).toMatch(/Verbose mode: false/);
-        expect(allLogs).toMatch(/Type compiler is working/);
-        expect(allLogs).toMatch(/Decorators are working/);
-        expect(allLogs).toMatch(/Dependency injection is working/);
+        match(allLogs, /Deepkit Type System Test/);
+        match(allLogs, /Hello TestUser!/);
+        match(allLogs, /Count: 5/);
+        match(allLogs, /Verbose mode: false/);
+        match(allLogs, /Type compiler is working/);
+        match(allLogs, /Decorators are working/);
+        match(allLogs, /Dependency injection is working/);
     });
 
     test('verbose mode shows user data', async () => {
@@ -60,9 +62,9 @@ describe('TestCommand execution', () => {
         await cmd.execute('Verbose', 1, true, mockLogger);
 
         const allLogs = logs.join('\n');
-        expect(allLogs).toMatch(/Verbose mode: true/);
-        expect(allLogs).toMatch(/User object with Deepkit types/);
-        expect(allLogs).toMatch(/John Doe/);
-        expect(allLogs).toMatch(/john@example.com/);
+        match(allLogs, /Verbose mode: true/);
+        match(allLogs, /User object with Deepkit types/);
+        match(allLogs, /John Doe/);
+        match(allLogs, /john@example.com/);
     });
 });

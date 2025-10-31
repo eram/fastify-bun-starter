@@ -1,5 +1,5 @@
-// script/release.js
-// Usage: node script/release.js [patch|minor|major|ci]
+// script/release.ts
+// Usage: bun run script/release.ts [patch|minor|major|ci]
 //   ci >> takes current tag and adds timestamp; does not tag the repo.
 //   no-params >> auto-detect bump type based on commits since last tag
 //   minor|major|patch >> explicit version bump type
@@ -14,23 +14,25 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const log = console.log;
-const error = (msg) => {
+const error = (msg: string): never => {
     console.error(msg);
     process.exit(1);
 };
 
 const now = new Date().toISOString();
 
-let oldVersion, newVersion;
+let oldVersion: string;
+let newVersion: string;
 
 try {
     const pkgPath = path.resolve(__dirname, '../package.json');
     const changelogPath = path.resolve(__dirname, '../CHANGELOG.md');
 
     // Determine bump type
-    let bumpType = process.argv[2];
+    type BumpType = 'patch' | 'minor' | 'major' | 'ci' | undefined;
+    let bumpType = process.argv[2] as BumpType;
     if (![undefined, 'patch', 'minor', 'major', 'ci'].includes(bumpType)) {
-        error('Usage: node script/release.js [patch|minor|major|ci]');
+        error('Usage: bun run script/release.ts [patch|minor|major|ci]');
     }
 
     // Get all clean semver tags and pick the latest (cross-platform)
@@ -62,10 +64,10 @@ try {
             }
         }
 
-        bumpType = hasFeat ? 'minor' : 'patch';
+        bumpType = hasFeat ? 'minor' : 'patch' as BumpType;
     }
 
-    const nonRelease = process.argv.includes('ci');
+    const nonRelease = bumpType === 'ci';
 
     if (nonRelease) {
         newVersion = `${oldVersion}-ci-${new Date().toISOString().replace(/[:.]/g, '-')}`;
@@ -80,25 +82,35 @@ try {
     log(`Bumping version: ${nonRelease ? 'ci' : bumpType} ${oldVersion} -> ${newVersion}`);
 
     // Build change log: one line per commit since last tag, with hash, time, and description
-    const commitRange = lastTag ? `${lastTag}..HEAD` : '';
-    const commitLogRaw = execSync(`git log ${commitRange} --pretty=format:"%h|%ad|%s" --date=iso`).toString();
-    const commitLines = commitLogRaw
-        .split(/\r?\n/)
-        .map((line) => {
-            const [hash, date, ...descParts] = line.split('|');
-            const desc = descParts.join('|').trim();
-            return hash && date && desc ? `- ${hash} ${date} ${desc}` : null;
-        })
-        .filter(Boolean)
-        .join('\n');
+    const commitRange = lastTag ? `${lastTag}..HEAD` : 'HEAD';
+    const commitLogRaw = execSync(`git log ${commitRange} --pretty=format:"%h|%ad|%s" --date=iso`).toString().trim();
+
+    let commitLines = '';
+    if (commitLogRaw) {
+        commitLines = commitLogRaw
+            .split(/\r?\n/)
+            .map((line) => {
+                const parts = line.split('|');
+                if (parts.length < 3) return null;
+                const hash = parts[0];
+                const date = parts[1];
+                const desc = parts.slice(2).join('|').trim();
+                return hash && date && desc ? `- ${hash} ${date} ${desc}` : null;
+            })
+            .filter(Boolean)
+            .join('\n');
+    }
 
     // Ensure CHANGELOG.md exists
     if (!fs.existsSync(changelogPath)) {
         fs.writeFileSync(changelogPath, '# Changelog\n\n');
     }
 
-    fs.appendFileSync(changelogPath, `\n## ${newVersion} - ${now}\n`);
-    fs.appendFileSync(changelogPath, `${commitLines}\n`);
+    const changelogEntry = commitLines
+        ? `\n## ${newVersion} - ${now}\n${commitLines}\n`
+        : `\n## ${newVersion} - ${now}\n(No commits since last release)\n`;
+
+    fs.appendFileSync(changelogPath, changelogEntry);
 
     log(`CHANGELOG.md updated with ${commitLines.split('\n').length} commits.`);
 
@@ -113,7 +125,8 @@ try {
         log(`CI build - no git tag created.`);
     }
 } catch (e) {
-    error(e.message);
+    const err = e as Error;
+    error(err.message);
 }
 
 // Output new version for Docker build (do not write to package.json)
