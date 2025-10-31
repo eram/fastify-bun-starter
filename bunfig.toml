@@ -1,7 +1,0 @@
-preload = ["@deepkit/bun"]
-
-[install]
-peer = true
-
-[test]
-#preload = ["@deepkit/bun"]

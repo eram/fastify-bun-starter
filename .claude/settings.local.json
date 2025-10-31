@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(bun install:*)",
+      "Bash(bun test:*)",
+      "Bash(bun run test:*)",
+      "Bash(bun run lint:fix:*)",
+      "Bash(bun pm:*)"
     ],
     "deny": [],
     "ask": []

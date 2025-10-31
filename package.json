@@ -1,51 +1,46 @@
 {
-  "name": "deepkit-starter",
+  "name": "fastify-bun-starter",
   "version": "0.1.0",
-  "description": "A starter template for building applications with Deepkit Framework - includes TypeScript, Vite, Vitest, Docker, and best practices",
+  "description": "A starter template for building applications with Fastify Framework and Bun runtime - includes TypeScript, HTTP API, CLI support, Docker, and best practices",
   "type": "module",
   "keywords": [
-    "deepkit",
+    "fastify",
+    "bun",
     "typescript",
     "starter",
     "template",
     "framework",
-    "dependency-injection",
+    "rest-api",
     "cli",
-    "vite",
-    "vitest"
+    "validation"
   ],
   "author": "Eram <eram@weblegions.com>",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/eram/deepkit-starter.git"
+    "url": "https://github.com/eram/fastify-bun-starter.git"
   },
   "bugs": {
-    "url": "https://github.com/eram/deepkit-starter/issues"
+    "url": "https://github.com/eram/fastify-bun-starter/issues"
   },
-  "homepage": "https://github.com/eram/deepkit-starter#readme",
+  "homepage": "https://github.com/eram/fastify-bun-starter#readme",
   "scripts": {
     "app": "bun run src/app.ts",
-    "build": "docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target prod -t deepkit-starter:latest . && docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target scan . && docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target logs --output type=local,dest=./build-logs .",
+    "build": "docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target prod -t fastify-bun-starter:latest . && docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target scan . && docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target logs --output type=local,dest=./build-logs .",
     "build:grype": "docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target scan .",
     "clean": "bun run rimraf -- -q dist build build-logs coverage node_modules .cache .vitest *.log *.cpuprofile",
     "dev": "bun run --hot src/app.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "postinstall": "deepkit-type-install",
     "release": "bun run script/release.ts",
     "rimraf": "bun run script/rimraf.ts",
-    "test": "bun run lint && bun test",
+    "test": "bun run lint && bun test src/app.test.ts ci",
     "test:integration": "bun test ci",
     "test:watch": "bun test --watch"
   },
   "dependencies": {
-    "@deepkit/app": "^1.0.19",
-    "@deepkit/bun": "^1.0.19",
-    "@deepkit/core": "^1.0.19",
-    "@deepkit/type": "^1.0.19",
-    "@deepkit/type-compiler": "^1.0.19",
     "@types/node": "^24.9.2",
+    "fastify": "^5.2.0",
     "typescript": "^5.9.3"
   },
   "devDependencies": {

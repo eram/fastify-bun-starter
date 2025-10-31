@@ -10,7 +10,6 @@
     "inlineSourceMap": false,
     "inlineSources": false
   },
-  "reflection": true,
   "include": [
     "src/**/*",
     "ci/**/*"

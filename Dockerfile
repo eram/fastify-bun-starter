@@ -1,4 +1,4 @@
-# Dockerfile for deepkit-starter based on Wolfi OS with Bun
+# Dockerfile for fastify-starter based on Wolfi OS with Bun
 
 # ---- Base image ----
 FROM cgr.dev/chainguard/wolfi-base:latest AS base
@@ -40,10 +40,12 @@ RUN rm -rf \
 RUN chmod -R a-w /app
 USER appuser
 WORKDIR /app
-EXPOSE 80 8080
+ENV PORT=3000
+ENV HOST=0.0.0.0
+EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD bun run -e "fetch('http://localhost:8080/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
-CMD ["bun", "run", "src/app.ts"]
+  CMD bun run -e "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+CMD ["bun", "run", "src/app.ts", "server"]
 
 
 # ---- Vulnerability scan stage (does not produce final image) ----
