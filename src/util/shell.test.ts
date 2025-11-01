@@ -1,7 +1,7 @@
 import { equal, ok, rejects } from 'node:assert/strict';
 import readline from 'node:readline';
 import { describe, test } from 'node:test';
-import { errno, prompt, system } from './shell';
+import { blue, bold, color, errno, getErrorName, green, grey, prompt, red, system, yellow } from './shell';
 
 describe('shell testing', () => {
     test('system positive', async () => {
@@ -21,18 +21,26 @@ describe('shell testing', () => {
 
     test('filter', async () => {
         // Test filtering of output
-        const fn = mock.fn((line, stream) => stream.write(line));
+        let callCount = 0;
+        const fn = (line: string, stream: { write: (data: string) => void }) => {
+            callCount++;
+            stream.write(line);
+        };
         const code = await system('bun -e "console.log(process.pid)"', { throwOnError: true, lineTransform: fn });
         equal(code, 0);
-        equal(fn.mock.calls.length, 1);
+        equal(callCount, 1);
     });
 
     test('spinner func', async () => {
         let spinnerCount = 0;
-        const spinner = mock.fn(() => '+-+|'.charAt(spinnerCount++ % 4));
+        let spinnerCallCount = 0;
+        const spinner = () => {
+            spinnerCallCount++;
+            return '+-+|'.charAt(spinnerCount++ % 4);
+        };
         const code = await system('bun -e "await new Promise(resolve => setTimeout(resolve, 500))"', { spinner });
         equal(code, 0);
-        ok(spinner.mock.calls.length > 1);
+        ok(spinnerCallCount > 1);
     });
 
     test('timeout', async () => {
@@ -41,24 +49,90 @@ describe('shell testing', () => {
     });
 
     test('prompt positive', async () => {
-        mock.method(readline, 'createInterface', () => ({
+        const originalCreateInterface = readline.createInterface;
+        readline.createInterface = (() => ({
             question: (_q: string, cb: (v: string) => void) => cb('test'),
             close: () => undefined,
             on: () => undefined,
-        }));
+        })) as unknown as typeof readline.createInterface;
+
         const yn = await prompt('?', 'y');
         equal(yn, 'test');
-        // No need to call restore() when using node:test mock.method, it restores automatically after the test.
+
+        readline.createInterface = originalCreateInterface;
     });
 
     test('prompt with def value', async () => {
-        mock.method(readline, 'createInterface', () => ({
+        const originalCreateInterface = readline.createInterface;
+        readline.createInterface = (() => ({
             question: (_q: string, cb: (v: string) => void) => cb(''),
             close: () => undefined,
             on: () => undefined,
-        }));
+        })) as unknown as typeof readline.createInterface;
+
         const yn = await prompt('?', 'y');
         equal(yn, 'y');
-        // No need to call restore() here either.
+
+        readline.createInterface = originalCreateInterface;
+    });
+
+    test('system handles child process error event', async () => {
+        // This test covers the error handler (lines 112-113 in shell.ts)
+        await rejects(system('this-command-does-not-exist-anywhere-12345', { throwOnError: true }), /Failed with exit code/);
+    });
+
+    test('prompt handles SIGINT rejection', async () => {
+        const originalCreateInterface = readline.createInterface;
+        let sigintHandler: (() => void) | undefined;
+
+        readline.createInterface = (() => ({
+            question: (_q: string, _cb: (v: string) => void) => {
+                // Don't call callback, just wait for SIGINT
+            },
+            close: () => undefined,
+            on: (event: string, handler: () => void) => {
+                if (event === 'SIGINT') {
+                    sigintHandler = handler;
+                }
+            },
+        })) as unknown as typeof readline.createInterface;
+
+        const promptPromise = prompt('?', 'y');
+
+        // Trigger SIGINT
+        setTimeout(() => {
+            if (sigintHandler) {
+                sigintHandler();
+            }
+        }, 50);
+
+        await rejects(promptPromise);
+
+        readline.createInterface = originalCreateInterface;
+    });
+
+    test('color shorthand functions', () => {
+        // Test basic color functions
+        ok(red`test`.includes('test'));
+        ok(yellow`test`.includes('test'));
+        ok(grey`test`.includes('test'));
+        ok(green`test`.includes('test'));
+        ok(blue`test`.includes('test'));
+        ok(bold`test`.includes('test'));
+
+        // Test interpolation
+        const name = 'World';
+        ok(red`Hello ${name}`.includes('Hello World'));
+        ok(color('green', Object.assign(['Test'], { raw: ['Test'] })).includes('Test'));
+    });
+
+    test('getErrorName returns errno name', () => {
+        const name = getErrorName(errno.ENOENT);
+        equal(name, 'ENOENT');
+    });
+
+    test('getErrorName returns number for unknown errno', () => {
+        const name = getErrorName(999999);
+        equal(name, '999999');
     });
 });

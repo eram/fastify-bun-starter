@@ -42,9 +42,10 @@ export async function registerSwagger(app: FastifyInstance) {
         const paths: Record<string, unknown> = {};
 
         for (const route of app.printRoutes({ commonPrefix: false }).split('\n')) {
-            const match = route.match(/^([A-Z]+)\s+(.+?)(?:\s|$)/);
+            // Match Fastify tree format: "├── /path (METHOD)" or "└── /path (METHOD)"
+            const match = route.match(/[├└─│]\s*(.+?)\s+\(([A-Z]+)\)/);
             if (match) {
-                const [, method, path] = match;
+                const [, path, method] = match;
                 if (path.startsWith('/docs')) continue; // Skip documentation routes
 
                 // For now, create basic path entries

@@ -2,66 +2,70 @@
 /* istanbul ignore file */
 
 import cluster from 'node:cluster';
-import os from 'node:os';
-import { env } from './util';
+import { ClusterManager } from './util';
+import { env } from './util/env';
 
-// Track number of active workers
-let workerCount = 0;
+// Global cluster manager instance
+let clusterManager: ClusterManager | undefined;
+
+/**
+ * Get the current cluster manager instance
+ * @returns The cluster manager instance, or undefined if not initialized
+ */
+export function getClusterManager(): ClusterManager | undefined {
+    return clusterManager;
+}
 
 /**
  * Get the current number of active workers
  * @returns The number of active workers, or undefined if not in cluster mode
  */
 export function getWorkerCount(): number | undefined {
-    if (cluster.isPrimary) {
-        return workerCount;
-    }
-    if (cluster.isWorker) {
-        // Workers need to communicate with primary to get the count
-        // For now, return undefined in workers
-        return undefined;
-    }
-    return undefined;
+    return clusterManager?.getStats().activeWorkers;
 }
 
-// Import and start server in worker
-/* istanbul ignore next */
-const startServerInWorker = async () => {
+/**
+ * Get cluster statistics
+ * @returns Cluster statistics, or undefined if not in cluster mode
+ */
+export function getClusterStats() {
+    return clusterManager?.getStats();
+}
+
+/**
+ * Worker entry point - starts the Fastify server
+ * This is called by ClusterManager in worker processes
+ */
+async function startWorker() {
     const { app } = await import('./app');
     const { startServer } = await import('./http/server');
+
     await startServer(app);
-};
+}
 
 /**
  * Start cluster mode - only runs when this file is executed directly
  */
 /* istanbul ignore next */
 async function startCluster() {
-    if (cluster.isPrimary) {
-        console.log(`Cluster primary ${process.pid} started`);
+    // Print environment variables in development mode only
+    if (cluster.isPrimary && process.env.NODE_ENV === 'development') {
         env.print();
-
-        // Fork workers for each CPU core
-        const numWorkers = Number(process.env.WORKERS) || os.cpus().length;
-        console.log(`Starting ${numWorkers} workers...`);
-
-        for (let i = 0; i < numWorkers; i++) {
-            cluster.fork();
-            workerCount++;
-        }
-
-        cluster.on('exit', (worker, code, signal) => {
-            console.log(`Worker ${worker.process.pid} died (${signal || code}). Restarting...`);
-            workerCount--;
-            cluster.fork();
-            workerCount++;
-        });
-
-        console.log(`Cluster mode: ${workerCount} workers active`);
-    } else {
-        console.log(`Cluster worker ${process.pid} started`);
-        await startServerInWorker();
     }
+
+    // If this is a worker process, just start the server
+    if (cluster.isWorker) {
+        await startWorker();
+        return;
+    }
+
+    // Create cluster manager with configuration (primary process)
+    clusterManager = new ClusterManager({
+        file: import.meta.url,
+    });
+
+    // Start cluster (will fork workers)
+    await clusterManager.startPrimary();
 }
 
 // Only run cluster if this file is executed directly (not imported)

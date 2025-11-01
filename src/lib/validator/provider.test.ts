@@ -3,11 +3,18 @@ import { describe, it } from 'node:test';
 import { number, object, string } from './index';
 import { JsonSchemaValidatorCompiler, validatorSerializerCompiler } from './provider';
 
+// Test helper type: narrow the compiler return type for tests
+type ValidationResult = { value?: unknown; error?: Error };
+
+function createTestCompiler<T>(schema: T, httpPart: string) {
+    return JsonSchemaValidatorCompiler({ schema, httpPart } as any) as (data: unknown) => ValidationResult;
+}
+
 describe('Provider tests', () => {
     // JsonSchemaValidatorCompiler tests
     it('should compile and validate with ValueValidator', () => {
         const validator = string().min(3).max(10);
-        const compiler = JsonSchemaValidatorCompiler({ schema: validator, httpPart: 'body' });
+        const compiler = createTestCompiler(validator, 'body');
 
         // Valid input
         const result1 = compiler('hello');
@@ -24,7 +31,7 @@ describe('Provider tests', () => {
             name: string().min(2),
             age: number().int().min(0),
         };
-        const compiler = JsonSchemaValidatorCompiler({ schema, httpPart: 'body' });
+        const compiler = createTestCompiler(schema, 'body');
 
         // Valid input
         const result1 = compiler({ name: 'John', age: 30 });
@@ -34,7 +41,7 @@ describe('Provider tests', () => {
         // Invalid input - missing required field
         const result2 = compiler({ name: 'John' });
         ok(result2.error instanceof Error);
-        ok(result2.error.message.includes('age'));
+        ok(result2.error?.message.includes('age'));
 
         // Invalid input - age not integer
         const result3 = compiler({ name: 'John', age: 30.5 });
@@ -48,7 +55,7 @@ describe('Provider tests', () => {
                 email: string().email(),
             }),
         };
-        const compiler = JsonSchemaValidatorCompiler({ schema, httpPart: 'body' });
+        const compiler = createTestCompiler(schema, 'body');
 
         // Valid input
         const result1 = compiler({ user: { name: 'John', email: 'john@example.com' } });
@@ -64,24 +71,24 @@ describe('Provider tests', () => {
         const schema = { id: string() };
 
         // body
-        const bodyCompiler = JsonSchemaValidatorCompiler({ schema, httpPart: 'body' });
+        const bodyCompiler = createTestCompiler(schema, 'body');
         const bodyResult = bodyCompiler({ id: '123' });
         strictEqual(bodyResult.error, undefined);
 
         // querystring
-        const queryCompiler = JsonSchemaValidatorCompiler({ schema, httpPart: 'querystring' });
+        const queryCompiler = createTestCompiler(schema, 'querystring');
         const queryResult = queryCompiler({ id: '456' });
         strictEqual(queryResult.error, undefined);
 
         // params
-        const paramsCompiler = JsonSchemaValidatorCompiler({ schema, httpPart: 'params' });
+        const paramsCompiler = createTestCompiler(schema, 'params');
         const paramsResult = paramsCompiler({ id: '789' });
         strictEqual(paramsResult.error, undefined);
     });
 
     it('should return error for invalid data', () => {
         const validator = number().min(10);
-        const compiler = JsonSchemaValidatorCompiler({ schema: validator, httpPart: 'body' });
+        const compiler = createTestCompiler(validator, 'body');
 
         const result = compiler(5);
         ok(result.error instanceof Error);
@@ -90,7 +97,7 @@ describe('Provider tests', () => {
 
     it('should handle empty objects', () => {
         const schema = {};
-        const compiler = JsonSchemaValidatorCompiler({ schema, httpPart: 'body' });
+        const compiler = createTestCompiler(schema, 'body');
 
         const result = compiler({});
         strictEqual(result.error, undefined);

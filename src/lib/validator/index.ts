@@ -16,6 +16,7 @@ export * from './provider';
 export * from './schema';
 export * from './validator';
 
+import type { Infer } from './provider';
 import { fromJsonSchema, toJsonSchema } from './schema';
 // Re-export core validator functions and types for direct access
 import {
@@ -35,7 +36,6 @@ import {
     hex,
     hostname,
     httpUrl,
-    infer,
     int,
     ipv4,
     ipv6,
@@ -102,7 +102,6 @@ export const z = {
     optional,
     union,
     unknown,
-    infer,
 
     // String format validators
     email,
@@ -144,4 +143,6 @@ export namespace z {
     export type ZodType<T = unknown> = TypeVal<T>;
     export type ZodObject = ObjVal;
     export type ZodString = StrVal;
+    // biome-ignore lint/style/useNamingConvention: Zod compatibility
+    export type infer<T> = Infer<T>;
 }

@@ -18,10 +18,10 @@ export const sleep = setTimeout;
  * @param delay - The delay in milliseconds (default: 300).
  * @returns A debounced function.
  */
-export function debounce<T extends (...args: unknown[]) => void>(func: T, delay: number = 300): (...args: Parameters<T>) => void {
+export function debounce<T extends (...args: never[]) => void>(func: T, delay: number = 300): T {
     let timeout: NodeJS.Timeout;
-    return (...args: Parameters<T>) => {
+    return ((...args: Parameters<T>) => {
         clearTimeout(timeout);
         timeout = globalThis.setTimeout(() => func(...args), delay).unref();
-    };
+    }) as T;
 }

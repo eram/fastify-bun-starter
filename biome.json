@@ -8,14 +8,12 @@
   "files": {
     "ignoreUnknown": true,
     "includes": [
-      "src/**/*.js",
-      "src/**/*.ts",
-      "ci/**/*.js",
-      "script/release.ts",
-      "script/rimraf.ts",
-      "!!script/bench_*.js",
+      "src/**/*.{js,ts,jsx,tsx,json}",
+      "ci/**/*.{js,ts}",
+      "script/*.{js,ts}",
       "!!**/*.min.js",
-      "!!node_modules"
+      "!!node_modules",
+      "!!src/**/__mocks__"
     ]
   },
   "formatter": {
@@ -28,6 +26,11 @@
     "enabled": true,
     "rules": {
       "recommended": true,
+      "suspicious": {
+        "noConsole": "off",
+        "noExplicitAny": "error",
+        "noAssignInExpressions": "off"
+      },
       "complexity": {
         "noExcessiveCognitiveComplexity": {
           "level": "error",
@@ -100,14 +103,21 @@
             "strictCase": false
           }
         }
-      },
-      "suspicious": {
-        "noConsole": "off",
-        "noExplicitAny": "error",
-        "noAssignInExpressions": "off"
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["**/*.test.ts", "**/*.test.js"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExplicitAny": "off"
+          }
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "indentStyle": "space",

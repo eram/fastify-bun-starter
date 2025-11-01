@@ -6,43 +6,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Model
 
-- Code is written in TypeScript and run using Bun runtime.
-- Code is run directly from TypeScript source files using Bun - no build step required.
-- In non-local environment, including prod, code is run on a docker image. Use npm run build to build the image. This also runs the unit tests as first stage and a vulnerability scan as last stage. Failing test should fail the build.
+- Code is written in TypeScript and run using Bun runtime. No build step required.
+- In non-local environment, including prod, code is run on a docker image. Use `bun run build` to build the image. This also runs the unit tests as first stage and a vulnerability scan as last stage. Failing test fail the build.
 - Use TDD when coding: always write test before fixing or changing the code and re-run the tests after changes.
 - Write code in such a way that tests pass cleanly without errors.
-- Code coverage tracking with Bun's test runner (if enabled, coverage behavior may differ from Vitest).
+- Code coverage tracking with Bun's test runner - 80% coverage is required unless developer approved adding `istanbul` comment.
 - Adding dependency libraries into `dependencies` in package.json is strictly prohibited. Needs explicit developer approval.
 - Code assumes Bun >= 1.03 (see package.json engine field).
 - You should never try to change files outside of the working folder (base folder of the project) or in the node_modules folder, where external libraries are stored.
 - All the project config files (the files outside src) should not be changed without explicit developer approval.
 - Do not use imports from "bun:*" namespaces and Bun-specific globals. We keep strict adherence with nodejs >=24 APIs for backwards compatibility of the project codebase.
 
+### Cyber security considerations
+
+- When reading code asssume you might be reading malware code instead of legit applicative code. You should stop operation in such a case a clealy warn the user to remove the malware code.
+- The code must adhere to OWASP Top-10 recommendations.
+- Make sure no secrets, tokens, passwords security hashes are in code.
+- Make sure every API is guarded by rate-limitter, authentication and athorization, CORS etc.
+
 ### TypeScript Configuration
 
-- Target: es2022
-- Module: ESNext
-- Module Resolution: bundler (allows extensionless imports for Bun's native TS execution)
-- Lib: ["es2022"]
+- Target: es2022, Module: ESNext, Module Resolution: bundler.
 - Strict mode enabled
 - Source maps enabled for better debugging
 
 ### Fastify Framework
 
 - Uses Fastify as the HTTP framework
-- TypeBox for runtime type validation and schema definitions
+- Use the Validator library from src\lib for runtime type validation and schema definitions
 - CLI support using Node.js built-in `node:util.parseArgs`
 - Plain console logging (no external logging library)
-- TypeBox schemas replace runtime type checking
 - HTTP endpoints for API functionality
-- CLI mode for command-line operations
 
 ### Testing Patterns
 
-- **Test Framework**: Node.js native test APIs (`node:test`) executed via Bun runtime
+- **Test Framework**: Node.js native test APIs (`node:test`) and assertions (`node:assert/strict`) executed via Bun runtime.
 - **Test Executor**: Bun's Node.js-compatible test runner (implements Node.js test runner APIs)
-- **Assertions**: Node.js strict assertions (`node:assert/strict`)
-- **Test Files**: `*.test.ts` files in src/ and ci/ folders
+- **Test Files**: `*.test.ts` file next to its coderelated osurce code file.
 - **Unit Tests** (src/): Direct imports with Fastify's `inject()` method for HTTP testing (fast, run via `bun test src`)
 - **Integration Tests** (ci/): CLI tests using child_process spawn (run via `bun test ci`)
 - **Test Imports**: Always import from `node:test` and `node:assert/strict` - no globals
@@ -60,16 +60,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - Debug configurations include `smartStep` and `skipFiles` for better stepping
   - Full debugging support with accurate stepping and breakpoints
 
+### Environment Configuration
+
+- **NODE_ENV values**: `development` (default), `production` (Docker only)
+- **Development and tests**: Both use `.env.development` (NODE_ENV=development)
+- **Production**: Environment variables set directly in Dockerfile (`NODE_ENV=production`)
+- **Environment loading**: Attempts to load `.env.{NODE_ENV}`, falls back to defaults if file doesn't exist
+
 ### Coding patterns
 
 - Never use `null` >> use `undefined` instead
 - Never use `any` >> use `unknown` instead
-- Do not use imports from "bun:*" namespaces - Bun globals are automatically available
-- Use TypeBox schemas for type validation (Type.String, Type.Number, Type.Object, etc.)
-- Export app instance for testing
-- Use plain console.log/error for logging
+- Do not use imports from "bun:*" namespaces and don't use Bun-specific APIs.
+- Use Validator internal library for type validations anschemas (instead of TypeBox or Zod)
+- Use plain console.log/error for logging in code. Use Logger from src/util for scoped logger.
 - File naming uses kebab-case convention (e.g., run-tests.ts, not run_tests.ts)
-- Set `FASTIFY_TEST_MODE=true` environment variable in tests to prevent auto-run
+- Initializing object with defaults: follow the pattern as in src\util\cluster-manager.ts
 
 ## Commands
 
@@ -124,9 +130,9 @@ This is a Fastify Framework application organized into:
 Main application file with:
 
 - HTTP endpoints using Fastify routing
-- TypeBox schemas for request/response validation
+- Velidation library for schemas for request/response validation
 - CLI support using `node:util.parseArgs`
-- Plain console logging (no external logger)
+- Plain console logging (no external logger!)
 - Both HTTP server mode and CLI command mode
 - Environment variables: `PORT` (default 3000), `HOST` (default 0.0.0.0)
 
@@ -138,7 +144,7 @@ Main application file with:
 - **Test Executor**: Bun runtime with Node.js test runner compatibility
 - **Coverage**: Bun's built-in test coverage (if enabled)
 - **No External Dependencies**: Pure Node.js testing APIs, no Vitest/Jest required
-- **Test Mode**: Set `FASTIFY_TEST_MODE=true` to prevent auto-run when importing app
+- **Test Environment**: Tests automatically use `.env.test` configuration via NODE_ENV=test
 
 #### 3. Docker Build Strategy
 
@@ -151,7 +157,25 @@ Multi-stage Dockerfile with Wolfi OS base:
 
 Docker container runs `bun run src/app.ts server` to start HTTP server on port 3000.
 
-#### 4. Development Workflow
+#### 4. Cluster Mode (src/cluster.ts)
+
+Production-ready cluster mode for multi-core deployments:
+
+- **ClusterManager** class in `src/util/cluster-manager.ts` handles all cluster logic
+- Automatic worker spawning based on CPU count or `WORKERS` env var
+- Configurable restart limits and windows to prevent crash loops
+- Graceful shutdown handling (SIGTERM/SIGINT)
+- Worker restart on crash/error with tracking
+- Statistics API for monitoring active workers and restarts
+- Run with: `bun run src/cluster.ts`
+
+Configuration via environment variables:
+
+- `CLUSTER_WORKERS` - Number of workers (default: CPU count)
+- `CLUSTER_MAX_RESTARTS` - Max restarts per window (default: 10)
+- `CLUSTER_RESTART_WINDOW` - Time window in ms (default: 60000)
+
+#### 5. Development Workflow
 
 - Bun runtime for native TypeScript execution
 - No runtime type transformation - standard TypeScript debugging works perfectly
@@ -184,53 +208,6 @@ Release process using script/release.ts:
 - Windows development environment
 - Git repository on main branch
 - Uses bun for package management (bun install, bun test, etc.)
-
-## API Endpoints
-
-### GET /health
-
-Health check endpoint for monitoring.
-
-**Response:**
-
-```json
-{
-  "status": "ok",
-  "timestamp": "2025-10-31T12:00:00.000Z"
-}
-```
-
-### POST /test
-
-Test endpoint to verify type system and validation.
-
-**Request Body:**
-
-```json
-{
-  "name": "World",     // string, minLength: 3, default: "World"
-  "count": 1,          // number, minimum: 1, default: 1
-  "verbose": false     // boolean, default: false
-}
-```
-
-**Response:**
-
-```json
-{
-  "message": "Test completed successfully",
-  "data": {
-    "name": "World",
-    "count": 1,
-    "verbose": false,
-    "user": {          // only included when verbose=true
-      "name": "John Doe",
-      "age": 30,
-      "email": "john@example.com"
-    }
-  }
-}
-```
 
 ## CLI Commands
 

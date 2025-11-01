@@ -307,7 +307,6 @@ describe('logger tests', () => {
 
         const log = logger.createLogger(t.name, logger.LogLevel.INFO, makeConsole(nullFn), {
             formatter: 'json',
-            useObjectPool: true,
         });
         log.log('foo:%s', 'bar');
         strictEqual(nullFn.mock.calls.length, 1);
@@ -386,7 +385,7 @@ describe('logger tests', () => {
             } as unknown as NodeJS.WritableStream;
 
             const speedLog = new logger.SpeedStd(nullStream, nullStream, 10, 10);
-            const log = logger.createLogger(t.name, logger.LogLevel.DEBUG, speedLog, { useObjectPool: false });
+            const log = logger.createLogger(t.name, logger.LogLevel.DEBUG, speedLog);
             log.error('error1');
             log.error('error2');
             log.log('log1');
@@ -400,41 +399,88 @@ describe('logger tests', () => {
 
     // hookConsole tests
     test('hookConsole and unhookConsole are idempotent', async (t) => {
-        // Save current state (may already be hooked from app.ts)
-        const currentLog = console.log;
+        // Save current state (may be wrapped from test-output-filter.ts)
+        const currentConsole = { ...console };
 
-        // Import fresh console to restore original
-        const { Console } = await import('node:console');
-        const originalConsole = new Console({ stdout: process.stdout, stderr: process.stderr });
-        Object.assign(console, originalConsole);
+        // First, unhook any existing hooks to reset the hookConsole state
+        const resetUnhook = logger.hookConsole();
+        resetUnhook();
+
+        // Check if test-output-filter.ts stored originals, restore those
+        const g = globalThis as {
+            __originalConsoleLog?: typeof console.log;
+            __originalConsoleInfo?: typeof console.info;
+            __originalConsoleError?: typeof console.error;
+            __originalConsoleWarn?: typeof console.warn;
+            __originalConsoleDebug?: typeof console.debug;
+            __originalConsoleTrace?: typeof console.trace;
+        };
 
         try {
-            // validate we're starting with original functions
-            deepEqual(console.log.name, 'log');
+            if (g.__originalConsoleLog) {
+                console.log = g.__originalConsoleLog;
+                console.info = g.__originalConsoleInfo!;
+                console.error = g.__originalConsoleError!;
+                console.warn = g.__originalConsoleWarn!;
+                console.debug = g.__originalConsoleDebug!;
+                console.trace = g.__originalConsoleTrace!;
+            } else {
+                // Fallback: create fresh console
+                const { Console } = await import('node:console');
+                const originalConsole = new Console({ stdout: process.stdout, stderr: process.stderr });
+                Object.assign(console, originalConsole);
+            }
+
+            // validate we're starting with original functions (may be bound from filter)
+            ok(console.log.name === 'log' || console.log.name === 'bound log');
             const unhook = logger.hookConsole(logger.createLogger(t.name));
             logger.hookConsole(); // should not throw or double-hook
             unhook();
             unhook(); // should not throw or double-unhook
             // validate we're ending with original
-            deepEqual(console.log.name, 'log');
+            ok(console.log.name === 'log' || console.log.name === 'bound log');
         } finally {
-            // Restore previous state
-            console.log = currentLog;
+            // Restore previous state (may be wrapped)
+            Object.assign(console, currentConsole);
         }
     });
 
     test('hookConsole actually hooks and unhooks', async (t) => {
-        // Save current state (may already be hooked from app.ts)
+        // Save current state
         const currentConsole = { ...console };
 
-        // Import fresh console to restore original
+        // First, unhook any existing hooks to reset the hookConsole state
+        const resetUnhook = logger.hookConsole();
+        resetUnhook();
+
+        // Create a fresh console to use as reference for original state
         const { Console } = await import('node:console');
         const originalConsole = new Console({ stdout: process.stdout, stderr: process.stderr });
-        Object.assign(console, originalConsole);
+
+        // Check if test-output-filter.ts stored originals, restore those to global console
+        const g = globalThis as {
+            __originalConsoleLog?: typeof console.log;
+            __originalConsoleInfo?: typeof console.info;
+            __originalConsoleError?: typeof console.error;
+            __originalConsoleWarn?: typeof console.warn;
+            __originalConsoleDebug?: typeof console.debug;
+            __originalConsoleTrace?: typeof console.trace;
+        };
+        if (g.__originalConsoleLog) {
+            console.log = g.__originalConsoleLog;
+            console.info = g.__originalConsoleInfo!;
+            console.error = g.__originalConsoleError!;
+            console.warn = g.__originalConsoleWarn!;
+            console.debug = g.__originalConsoleDebug!;
+            console.trace = g.__originalConsoleTrace!;
+        } else {
+            // Fallback: use fresh console
+            Object.assign(console, originalConsole);
+        }
 
         try {
-            // validate we're starting with original functions
-            deepEqual(console.log.name, 'log');
+            // validate we're starting with original functions (may be bound from filter)
+            ok(console.log.name === 'log' || console.log.name === 'bound log');
 
             const unhook = logger.hookConsole(logger.createLogger(t.name));
 
@@ -445,10 +491,14 @@ describe('logger tests', () => {
             }
 
             unhook();
-            // Should be restored
+            // Should be restored (may be bound from filter, so check both)
             for (const key of ['debug', 'trace', 'info', 'warn', 'error'] as const) {
                 ok(typeof console[key] === 'function');
-                strictEqual(console[key].name, originalConsole[key].name);
+                // Check name matches or is bound version (from test-output-filter)
+                ok(
+                    console[key].name === originalConsole[key].name || console[key].name === `bound ${originalConsole[key].name}`,
+                    `Expected ${console[key].name} to be ${originalConsole[key].name} or bound ${originalConsole[key].name}`,
+                );
             }
         } finally {
             // Restore previous state

@@ -25,6 +25,11 @@ export interface JsonSchemaTypeProvider extends FastifyTypeProvider {
 }
 
 /**
+ * Type for the validator function returned by the compiler
+ */
+type ValidatorFunction = (data: unknown) => { value?: unknown; error?: Error };
+
+/**
  * Validator schema compiler for Fastify
  * Compiles validator schemas into validation functions
  *
@@ -34,7 +39,10 @@ export interface JsonSchemaTypeProvider extends FastifyTypeProvider {
  * - Returning errors in Fastify's expected format
  */
 // biome-ignore lint/style/useNamingConvention: Fastify schema compiler convention
-export const JsonSchemaValidatorCompiler: FastifySchemaCompiler<ValueValidator | Schema> = ({ schema, httpPart: _httpPart }) => {
+export const JsonSchemaValidatorCompiler: FastifySchemaCompiler<ValueValidator | Schema> = (({
+    schema,
+    httpPart: _httpPart,
+}): ValidatorFunction => {
     return (data: unknown): { value?: unknown; error?: Error } => {
         try {
             // For non-body parts, we could apply type coercion here if needed
@@ -44,7 +52,7 @@ export const JsonSchemaValidatorCompiler: FastifySchemaCompiler<ValueValidator |
             // Check if it's a ValueValidator (has its own parse method and _validators property)
             // We need to check for _validators because objects might have parse methods too
             if ('_validators' in schema && typeof schema.parse === 'function') {
-                const validator = schema as ValueValidator<unknown>;
+                const validator = schema as unknown as ValueValidator<unknown>;
                 const result = validator.parse(value);
                 return { value: result };
             }
@@ -57,7 +65,7 @@ export const JsonSchemaValidatorCompiler: FastifySchemaCompiler<ValueValidator |
             return { error: error as Error };
         }
     };
-};
+}) as FastifySchemaCompiler<ValueValidator | Schema>;
 
 /**
  * Serializer compiler for Fastify responses

@@ -1,5 +1,5 @@
 [test]
-# Preload mock utility to inject global mocks
+# Preload mock utility for tests
 preload = ["./src/util/mock.ts"]
 
 # Coverage configuration

@@ -5,14 +5,17 @@ import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
 import * as worker from 'node:worker_threads';
+import type { Dict } from './immutable';
 import { createLogger, hookConsole, isDebuggerAttached, LogLevel } from './logger';
-import type { Dict } from './pojo';
 
 type EnvValue = string | number | boolean;
 
 export class Env {
-    static get nodeVer() {
-        return parseFloat(process.version.substring(1));
+    static get runtime(): 'node' | 'bun' {
+        return process.versions.bun ? 'bun' : 'node';
+    }
+    static get runtimeVer() {
+        return parseFloat(process.versions.bun?.substring(0) ?? process.versions.node?.substring(0));
     }
     static get isPrimary() {
         return cluster.isPrimary;
@@ -62,9 +65,9 @@ export class Env {
 
     static get hasDOM() {
         return (
-            typeof window !== 'undefined' &&
-            typeof window.document !== 'undefined' &&
-            typeof document.querySelector === 'function'
+            typeof Object(globalThis).window !== 'undefined' &&
+            typeof Object(globalThis).document !== 'undefined' &&
+            typeof Object(globalThis).document.querySelector === 'function'
         );
     }
 
@@ -73,8 +76,8 @@ export class Env {
      */
     constructor() {
         // validate node version
-        console.assert(Env.nodeVer >= 24.0, 'NodeJS version 24+ required');
-        Env.reload();
+        console.assert(Env.runtimeVer >= 24.0, 'NodeJS version 24+ required');
+        Env.init();
         process.title = Env.appName;
         hookConsole();
     }
@@ -82,15 +85,16 @@ export class Env {
     /**
      * Load environment variables from .env file and set defaults if not set.
      */
-    static reload() {
+    static init() {
         const { env, argv } = process;
 
-        // load .env according to environment with default to .env
+        // Set NODE_ENV: defaults to 'development', or 'production' in Docker
         env.NODE_ENV ??= Env.nodeEnv;
+
+        // Load .env.{NODE_ENV} file if it exists, otherwise use defaults
         const filename = env.DOT_ENV_FILE ? resolve(env.DOT_ENV_FILE) : resolve(`.env.${env.NODE_ENV}`);
         env.DOT_ENV_FILE ??= filename;
 
-        // Replaced safeSync with try-catch
         try {
             const buff = fs.readFileSync(filename);
             const parsed = parseEnv(buff.toString('utf8'));
@@ -166,7 +170,8 @@ export class Env {
             podNamespace,
             podName,
             hostname,
-            nodeVer,
+            runtime,
+            runtimeVer,
             workerId,
             threadId,
             nodeEnv,
@@ -178,7 +183,7 @@ export class Env {
 -----------------
 app: ${appName}, version: ${appVersion},
 args: "${process.execArgv.join(' ')}",
-host: ${hostname}, node: ${nodeVer},
+host: ${hostname}, ${runtime}: ${runtimeVer},
 pid: ${process.pid}, workerId: ${workerId || '-'}, threadId: ${threadId || '-'},
 euid: ${process.geteuid?.() ?? '-'} egid: ${process.getegid?.() ?? '-'},
 NODE_ENV: ${nodeEnv}, uv_threads: ${uvThreadpool}
@@ -189,7 +194,7 @@ logLevel: ${LogLevel[save]}, isDebugging: ${isDebuggerAttached}, test: ${process
         log.conf.level = save;
     }
 
-    reload = Env.reload;
+    reload = Env.init;
     print = Env.print;
     get = Env.get;
 }

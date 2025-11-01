@@ -8,13 +8,19 @@ import { styleText } from 'node:util';
 export const errno = constants.errno;
 export const getErrorName = (e: number) => Object.keys(errno).find((key) => Object(errno)[key] === e) || e.toString();
 
-// Color shorthand functions for styled text
-export const red = (...args: string[]) => styleText('red', args.join(' '));
-export const yellow = (...args: string[]) => styleText('yellow', args.join(' '));
-export const grey = (...args: string[]) => styleText('grey', args.join(' '));
-export const green = (...args: string[]) => styleText('green', args.join(' '));
-export const blue = (...args: string[]) => styleText('blue', args.join(' '));
-export const bold = (...args: string[]) => styleText('bold', args.join(' '));
+// Color shorthand functions for styled text (tagged template literals)
+type ForegroundColors = Parameters<typeof styleText>[0];
+export function color(color: ForegroundColors, strings: TemplateStringsArray, ...values: unknown[]): string {
+    const text = strings.reduce((acc, str, i) => acc + str + (values[i] ?? ''), '');
+    return styleText(color, text);
+}
+
+export const red = color.bind(null, 'red');
+export const yellow = color.bind(null, 'yellow');
+export const grey = color.bind(null, 'grey');
+export const green = color.bind(null, 'green');
+export const blue = color.bind(null, 'blue');
+export const bold = color.bind(null, 'bold');
 
 /**
  * Run a shell command with optional data filter, spinner and timeout.

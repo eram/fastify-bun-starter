@@ -410,7 +410,7 @@ export async function fetchJson<T>(
     input: string | URL | Request,
     init: RequestInit = { headers: { 'Content-Type': 'application/json' } },
 ): Promise<[T, undefined] | [undefined, Error]> {
-    return safe<T>(() => globalThis.fetch(input, init).then((r) => r.json()));
+    return safe<T>(() => globalThis.fetch(input, init).then((r) => r.json() as Promise<T>));
 }
 
 // ============================================================================

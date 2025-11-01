@@ -2,6 +2,10 @@
  * Validator Benchmark: Our validator vs Zod v4
  * ============================================
  *
+ * NOTE: This benchmark is currently disabled as it was designed for a different
+ * validator API (jsonValidator). The current project uses Fastify's validator API.
+ * TODO: Rewrite this benchmark to work with the current validator implementation.
+ *
  * This benchmark compares our custom validator implementation against Zod v4,
  * testing both scenarios where Zod v4 excels and where it struggles.
  *
@@ -88,7 +92,7 @@ function generateUser(id) {
     };
 }
 
-function generateInvalidUser(id) {
+function _generateInvalidUser(id) {
     const user = generateUser(id);
     // Make it invalid in various ways
     if (id % 3 === 0) user.email = 'invalid-email'; // Bad email
@@ -101,8 +105,8 @@ function generateInvalidUser(id) {
 // Test 1: Reused Schema - Parse Many Times (Zod v4 advantage)
 //----------------------------------------------------------------
 
-async function benchOurValidatorReused(usePool = false) {
-    const { parse, object, string, number, boolean, array } = await import('../src/utils/jsonValidator.ts');
+async function benchOurValidatorReused() {
+    const { parse, object, string, number, boolean, array } = await import('../src/lib/validator/schema.ts');
 
     // Create schema once
     const schema = {
@@ -141,7 +145,7 @@ async function benchOurValidatorReused(usePool = false) {
 
     let successCount = 0;
     for (const data of testData) {
-        const result = parse(schema, data, { usePool });
+        const result = parse(schema, data);
         if (result) successCount++;
     }
 
@@ -199,7 +203,7 @@ async function benchZodReused() {
         try {
             const result = schema.parse(data);
             if (result) successCount++;
-        } catch (e) {
+        } catch (_e) {
             // Invalid data
         }
     }
@@ -220,7 +224,7 @@ async function benchZodReused() {
 //----------------------------------------------------------------
 
 async function benchOurValidatorCreateOnce() {
-    const { parse, object, string, number, boolean, array } = await import('../src/utils/jsonValidator.ts');
+    const { parse, object, string, number, boolean, array } = await import('../src/lib/validator/schema.ts');
 
     const testData = Array.from({ length: ITERATIONS_ONCE }, (_, i) => generateUser(i));
 
@@ -316,7 +320,7 @@ async function benchZodCreateOnce() {
         try {
             const result = schema.parse(data);
             if (result) successCount++;
-        } catch (e) {
+        } catch (_e) {
             // Invalid data
         }
     }
@@ -336,8 +340,8 @@ async function benchZodCreateOnce() {
 // Test 3: Simple Object (Quick validation)
 //----------------------------------------------------------------
 
-async function benchOurValidatorSimple(usePool = false) {
-    const { parse, string, number } = await import('../src/utils/jsonValidator.ts');
+async function benchOurValidatorSimple() {
+    const { parse, string, number } = await import('../src/lib/validator/schema.ts');
 
     const schema = {
         name: string(),
@@ -359,7 +363,7 @@ async function benchOurValidatorSimple(usePool = false) {
 
     let successCount = 0;
     for (const data of testData) {
-        const result = parse(schema, data, { usePool });
+        const result = parse(schema, data);
         if (result) successCount++;
     }
 
@@ -400,7 +404,7 @@ async function benchZodSimple() {
         try {
             const result = schema.parse(data);
             if (result) successCount++;
-        } catch (e) {
+        } catch (_e) {
             // Invalid data
         }
     }
@@ -421,7 +425,7 @@ async function benchZodSimple() {
 //----------------------------------------------------------------
 
 async function benchOurValidatorArray() {
-    const { parse, array, object, string, number } = await import('../src/utils/jsonValidator.ts');
+    const { parse, array, object, string, number } = await import('../src/lib/validator/schema.ts');
 
     const schema = {
         users: array(
@@ -496,7 +500,7 @@ async function benchZodArray() {
         try {
             const result = schema.parse(data);
             if (result) successCount++;
-        } catch (e) {
+        } catch (_e) {
             // Invalid data
         }
     }
@@ -517,7 +521,11 @@ async function benchZodArray() {
 //----------------------------------------------------------------
 
 async function main() {
-    await import('tsx');
+    console.error('This benchmark is currently disabled.');
+    console.error('It was designed for a different validator API that is not available in this project.');
+    console.error('TODO: Rewrite to use the current Fastify validator implementation.');
+    process.exit(1);
+
     const os = await import('node:os');
 
     if (typeof global.gc !== 'function') {
@@ -529,7 +537,7 @@ async function main() {
     console.log('='.repeat(40));
 
     console.table({
-        time: new Date().toISOString().slice(0, 16).replace('T', ' ') + 'Z',
+        time: `${new Date().toISOString().slice(0, 16).replace('T', ' ')}Z`,
         host: os.hostname(),
         'reused iterations': ITERATIONS_REUSED,
         'once iterations': ITERATIONS_ONCE,
@@ -543,7 +551,7 @@ async function main() {
     console.log('Schema created once, parsed', ITERATIONS_REUSED, 'times');
 
     console.log('Testing Our Validator...');
-    const ourSimple = await benchOurValidatorSimple(false);
+    const ourSimple = await benchOurValidatorSimple();
     console.log('✓ Complete:', ourSimple);
 
     console.log('Testing Zod...');
@@ -557,7 +565,7 @@ async function main() {
     console.log('Schema created once, parsed', ITERATIONS_REUSED, 'times');
 
     console.log('Testing Our Validator...');
-    const ourReused = await benchOurValidatorReused(false);
+    const ourReused = await benchOurValidatorReused();
     console.log('✓ Complete:', ourReused);
 
     console.log('Testing Zod...');
@@ -595,13 +603,13 @@ async function main() {
     results.push({ test: 'Validator (array)', ...ourArray }, { test: 'Zod4 (array)', ...zodArray });
 
     // Summary
-    console.log('\n' + '='.repeat(60));
+    console.log(`\n${'='.repeat(60)}`);
     console.log('RESULTS SUMMARY');
     console.log('='.repeat(60));
     console.table(results);
 
     // Analysis
-    console.log('\n' + '='.repeat(60));
+    console.log(`\n${'='.repeat(60)}`);
     console.log('PERFORMANCE ANALYSIS');
     console.log('='.repeat(60));
 
@@ -610,20 +618,12 @@ async function main() {
     console.log('\nSimple Object (Reused):');
     console.log('  Our validator:', ourSimple['ops/ms'], 'ops/ms');
     console.log('  Zod v4:', zodSimple['ops/ms'], 'ops/ms');
-    console.log(
-        '  → Zod is',
-        speedup(ourSimple, zodSimple),
-        'x faster' + (speedup(ourSimple, zodSimple) < 1 ? ' (we win!)' : ''),
-    );
+    console.log('  → Zod is', speedup(ourSimple, zodSimple), `x faster${speedup(ourSimple, zodSimple) < 1 ? ' (we win!)' : ''}`);
 
     console.log('\nComplex Object (Reused):');
     console.log('  Our validator:', ourReused['ops/ms'], 'ops/ms');
     console.log('  Zod v4:', zodReused['ops/ms'], 'ops/ms');
-    console.log(
-        '  → Zod is',
-        speedup(ourReused, zodReused),
-        'x faster' + (speedup(ourReused, zodReused) < 1 ? ' (we win!)' : ''),
-    );
+    console.log('  → Zod is', speedup(ourReused, zodReused), `x faster${speedup(ourReused, zodReused) < 1 ? ' (we win!)' : ''}`);
 
     console.log('\nCreate Once Pattern:');
     console.log('  Our validator:', ourOnce['ops/ms'], 'ops/ms');
@@ -631,15 +631,15 @@ async function main() {
     console.log(
         '  → We are',
         r(ourOnce.time / zodOnce.time),
-        'x faster' + (ourOnce.time > zodOnce.time ? ' (Zod wins!)' : ' (we win!)'),
+        `x faster${ourOnce.time > zodOnce.time ? ' (Zod wins!)' : ' (we win!)'}`,
     );
 
     console.log('\nArray Validation:');
     console.log('  Our validator:', ourArray['ops/ms'], 'ops/ms');
     console.log('  Zod v4:', zodArray['ops/ms'], 'ops/ms');
-    console.log('  → Zod is', speedup(ourArray, zodArray), 'x faster' + (speedup(ourArray, zodArray) < 1 ? ' (we win!)' : ''));
+    console.log('  → Zod is', speedup(ourArray, zodArray), `x faster${speedup(ourArray, zodArray) < 1 ? ' (we win!)' : ''}`);
 
-    console.log('\n' + '='.repeat(60));
+    console.log(`\n${'='.repeat(60)}`);
 }
 
 main().catch(console.error);

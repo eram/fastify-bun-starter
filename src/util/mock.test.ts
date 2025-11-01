@@ -262,7 +262,6 @@ describe('mock utility', () => {
 
         throws(
             () => {
-                // biome-ignore lint/suspicious/noExplicitAny: Testing error case
                 mock.method(obj as any, 'value');
             },
             /Cannot mock non-function property/,

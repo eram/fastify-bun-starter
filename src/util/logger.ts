@@ -1,12 +1,11 @@
-// !!! DO NOT IMPORT env, POJO or ExtendedError !!!
+// !!! DO NOT IMPORT env or ExtendedError !!!
 
 import cluster from 'node:cluster';
 import inspector from 'node:inspector';
 import path from 'node:path';
 import process from 'node:process';
 import { format, styleText } from 'node:util';
-import { ObjectPool, PoolObject } from './objectPool';
-import { POJO } from './pojo';
+import { replacerFn } from './immutable';
 
 /**
  * Logger is a replacement for console logger:
@@ -53,13 +52,18 @@ export type LoggerOptions = Partial<
 const registrar = new Map<string, Logger>();
 
 export class LoggerConf {
+    /** Current log level threshold */
     level: LogLevel;
+    /** Logger scope/name identifier */
     readonly scope: string;
+    /** Whether to add timestamp to logs */
     readonly addTime: boolean;
+    /** Function for styling text output */
     readonly chalkFn: ChalkFn;
+    /** Log formatter function (json or line) */
     readonly formatter: Formatter;
+    /** Application name for logs */
     readonly app: string;
-    readonly useObjectPool: boolean;
 
     constructor({
         scope = this._defName(),
@@ -70,7 +74,6 @@ export class LoggerConf {
             : lineFn,
         chalkFn = styleText,
         app = process.env.APP_NAME ?? path.basename(process.execPath),
-        useObjectPool = false, // most objects are very small - the pool does not help much
     }: LoggerOptions = {}) {
         this.scope = scope;
         this.level = LoggerConf._normalizeLevel(level);
@@ -79,7 +82,6 @@ export class LoggerConf {
         this.formatter = formatter === 'json' ? jsonFn : formatter === 'line' ? lineFn : formatter;
         assertFn.call(this, typeof this.formatter === 'function', 'Invalid formatter');
         this.app = app;
-        this.useObjectPool = useObjectPool;
     }
 
     private _defName() {
@@ -139,50 +141,21 @@ export function isDebuggerAttached() {
     );
 }
 
-// Poolable log entry object for JSON formatter
-class LogEntry extends PoolObject {
-    message?: string;
-    ctx?: string;
-    type?: string;
-    timestamp?: string;
-    // biome-ignore lint/style/useNamingConvention: common log format
-    process_id?: number;
-    // biome-ignore lint/style/useNamingConvention: common log format
-    app_name?: string;
-
-    init(message: string, ctx: string, type: string, pid: number, app: string, timestamp?: string) {
-        this.message = message;
-        this.ctx = ctx;
-        this.type = type;
-        this.process_id = pid;
-        this.app_name = app;
-        this.timestamp = timestamp;
-        return this;
-    }
-}
-
-const pool = new ObjectPool(LogEntry, 0);
-
 // Formatter for json output
 function jsonFn(this: LoggerConf, lvl: LogLevel, fn: LogFn, _chalk: Chalk, ...params: unknown[]) {
     if (lvl <= this.level) {
-        let out: LogEntry;
         const message = format(...params);
         const type = lvl >= LogLevel.ERROR ? 'out' : 'err';
         const timestamp = this.addTime ? new Date().toUTCString() : undefined;
 
-        if (this.useObjectPool) {
-            out = pool.acquire(message, this.scope, type, process.pid, this.app, timestamp);
-        } else {
-            out = Object({
-                message,
-                ctx: this.scope,
-                type,
-                process_id: process.pid,
-                app_name: this.app,
-                timestamp,
-            });
-        }
+        const out = {
+            message,
+            ctx: this.scope,
+            type,
+            process_id: process.pid,
+            app_name: this.app,
+            timestamp,
+        };
         fn(out);
     }
 }
@@ -324,7 +297,7 @@ export class SpeedStd implements Transport {
             while ((group = this.groups.shift())) {
                 const stream = group.err ? this.stderr : this.stdout;
                 const txt = `${group.txts
-                    .map((v) => (typeof v === 'string' ? v : POJO.stringify(v, undefined, 0)))
+                    .map((v) => (typeof v === 'string' ? v : JSON.stringify(v, replacerFn, 0)))
                     .join('\n')}\n`;
                 const tryWrite = (attempt: number) => {
                     if (!stream.write(txt) && attempt < 3) stream.once('drain', () => tryWrite(attempt + 1));

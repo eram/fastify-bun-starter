@@ -669,7 +669,6 @@ describe('Schema conversion tests', () => {
     function parseWith<T>(validatorOrSchema: ReturnType<typeof fromJsonSchema>, data: unknown): T {
         // fromJsonSchema always returns a ValueValidator now
         // Use valueOf() method that all ValueValidators have
-        // biome-ignore lint/suspicious/noExplicitAny: Test helper needs flexibility
         return (validatorOrSchema as any).parse(data) as T;
     }
 
@@ -1011,7 +1010,6 @@ describe('Schema conversion tests', () => {
                     },
                 ],
             } as const;
-            // biome-ignore lint/suspicious/noExplicitAny: Complex nested const schema type
             const validator = fromJsonSchema(schema as any);
             const result = parseWith<{ name: string; age: number }>(validator, { name: 'John', age: 30 });
             ok(result.name === 'John' && result.age === 30);

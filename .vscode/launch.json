@@ -17,7 +17,7 @@
             "type": "bun",
             "request": "launch",
             "program": "${file}",
-            "args": ["test"],
+            "args": ["test", "--coverage", "--coverage-reporter=lcov"],
             "cwd": "${workspaceFolder}",
             "stopOnEntry": false,
             "watchMode": false,

@@ -57,7 +57,6 @@ describe('debounce', () => {
         };
 
         const debounced = debounce(fn); // No delay specified
-
         debounced();
 
         // Should not have been called after 200ms

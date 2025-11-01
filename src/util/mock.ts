@@ -1,9 +1,9 @@
 // biome-ignore-all lint/suspicious/noExplicitAny: Generic function types throughout this file need any for flexibility with typed functions
 
 /**
- * Mock utility for tests
- * Provides a compatibility layer between Bun's mock and node:test's MockTracker
- * This wraps Bun's mock functionality to match node:test's API
+ * Mock utility for Bun tests
+ * This wraps Bun's mock to match node:test's MockTracker API as a polyfill.
+ * It's injected into the test runner from preload hook in bunfig.toml
  */
 
 import { mock as bunMock } from 'bun:test';
@@ -209,16 +209,4 @@ declare global {
 // Auto-setup: attach to global when this module is imported
 if (!globalThis.mock) {
     globalThis.mock = mockTracker;
-}
-
-// Clean up old coverage data before tests run
-// This ensures fresh coverage reports and prevents stale data
-// @@@ todo: move this to a setup script.
-try {
-    const { rmSync } = await import('node:fs');
-    const { join } = await import('node:path');
-    const coveragePath = join(process.cwd(), 'coverage');
-    rmSync(coveragePath, { recursive: true, force: true });
-} catch {
-    // Ignore errors if coverage directory doesn't exist
 }

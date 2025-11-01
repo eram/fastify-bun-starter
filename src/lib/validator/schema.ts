@@ -281,9 +281,9 @@ function cleanValidatorDef(obj: unknown): JsonSchema {
 
 class DefFromJsonSchemaOptions {
     /** Allow additional properties by default (for object schemas) (default: false) */
-    readonly additionalProperties = false;
+    readonly additionalProperties: boolean = false;
     /** Only accept modern JSON Schema versions (draft 2019-09 or 2020-12) (default: true) */
-    readonly strictVersion = true;
+    readonly strictVersion: boolean = true;
 }
 
 export type FromJsonSchemaOptions = Partial<DefFromJsonSchemaOptions>;

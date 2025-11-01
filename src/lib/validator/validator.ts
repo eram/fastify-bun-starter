@@ -1598,9 +1598,6 @@ export const nullValidator = () => NULL_VALIDATOR;
 export const undefinedValidator = () => UNDEFINED_VALIDATOR;
 export const voidValidator = () => VOID_VALIDATOR;
 
-// TypeScript-only helper for type inference
-export const infer = <T>(_schema: ValueValidator<T>) => undefined as T;
-
 // shorthands
 export const uuid = () => new StrVal().uuid();
 export const url = () => new StrVal().url();
@@ -1712,3 +1709,9 @@ export function safeParse<T extends Record<string, unknown>>(
  * Alias for backward compatibility - parse does the same as parseSchema
  */
 export const parse = parseSchema;
+
+/**
+ * Type helper to infer TypeScript types from validator schemas
+ * Re-exported from provider for convenience
+ */
+export type { Infer } from './provider';

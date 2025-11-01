@@ -24,9 +24,13 @@ logs/
 var/
 build-logs
 
-# Ignore local dev files
+# Ignore local dev files (but track .env.development template)
 .env
+.env.*
 *.local
+
+# Track development environment template
+!.env.development
 
 # Ignore IDE/editor and misc files
 .cursor/
