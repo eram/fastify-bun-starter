@@ -1,26 +1,12 @@
 import { deepEqual, ok, strictEqual, throws } from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { fromJsonSchema, toJsonSchema } from './jsonSchema';
-import {
-    array,
-    bigint,
-    boolean,
-    date,
-    literal,
-    map,
-    nullable,
-    nullish,
-    number,
-    object,
-    set,
-    string,
-    union,
-    z,
-} from './jsonValidator';
+import { array, bigint, boolean, date, literal, map, nullable, nullish, number, object, set, string, union, z } from './index';
+import { fromJsonSchema, toJsonSchema } from './schema';
 
 const defOpts = (_t: it.SuiteContext) => ({ includeSchemaVersion: false });
 
-describe('jsonSchema basic types', () => {
+describe('Schema conversion tests', () => {
+    // jsonSchema basic types
     it('should convert primitive types', (t) => {
         const result = toJsonSchema(
             {
@@ -328,9 +314,8 @@ describe('jsonSchema basic types', () => {
             additionalProperties: true,
         });
     });
-});
 
-describe('Json schema builup', () => {
+    // Json schema builup
     it('should control schema version inclusion and targets', (t) => {
         const withVersion = toJsonSchema({ name: string() }, { ...defOpts(t), includeSchemaVersion: true });
         strictEqual(withVersion.$schema, 'http://json-schema.org/draft-07/schema#');
@@ -501,9 +486,8 @@ describe('Json schema builup', () => {
             description: 'Age in years',
         });
     });
-});
 
-describe('type constraints', () => {
+    // type constraints
     it('should include number constraints', (t) => {
         const min = toJsonSchema({ age: number().min(18) }, defOpts(t));
         deepEqual(min.properties?.age, { type: 'number', minimum: 18 });
@@ -632,9 +616,8 @@ describe('type constraints', () => {
         const multiple = toJsonSchema({ even: bigint().multipleOf(2n) }, defOpts(t));
         deepEqual(multiple.properties?.even, { type: 'integer', multipleOf: 2 });
     });
-});
 
-describe('z compatibility', () => {
+    // z compatibility
     it('should support zodToJsonSchema alias and z.* methods', (t) => {
         const basic = z.zodToJsonSchema({ name: z.string() }, defOpts(t));
         deepEqual(basic, {
@@ -681,15 +664,13 @@ describe('z compatibility', () => {
         strictEqual(bothDataSchema.minProperties, 1);
         strictEqual(bothDataSchema.maxProperties, 5);
     });
-});
-
-describe('fromJsonSchema - JSON Schema to Validator conversion', () => {
+    // fromJsonSchema - JSON Schema to Validator conversion
     // Helper function to parse data with the result from fromJsonSchema
     function parseWith<T>(validatorOrSchema: ReturnType<typeof fromJsonSchema>, data: unknown): T {
         // fromJsonSchema always returns a ValueValidator now
         // Use valueOf() method that all ValueValidators have
         // biome-ignore lint/suspicious/noExplicitAny: Test helper needs flexibility
-        return (validatorOrSchema as any).valueOf(data) as T;
+        return (validatorOrSchema as any).parse(data) as T;
     }
 
     describe('basic types', () => {

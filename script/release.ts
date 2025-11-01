@@ -64,7 +64,7 @@ try {
             }
         }
 
-        bumpType = hasFeat ? 'minor' : 'patch' as BumpType;
+        bumpType = hasFeat ? 'minor' : ('patch' as BumpType);
     }
 
     const nonRelease = bumpType === 'ci';

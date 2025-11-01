@@ -20,10 +20,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### TypeScript Configuration
 
-- Target: es2020
+- Target: es2022
 - Module: ESNext
 - Module Resolution: bundler (allows extensionless imports for Bun's native TS execution)
-- Lib: ["es2020"]
+- Lib: ["es2022"]
 - Strict mode enabled
 - Source maps enabled for better debugging
 
@@ -49,6 +49,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Watch Mode**: Available via `bun test --watch` for TDD workflows
 - **Test Organization**: Use `describe` and `test`, `beforeEach`/`afterEach` for setup/teardown
 - **No External Test Dependencies**: Uses Node.js built-in testing APIs (no Vitest/Jest needed)
+- **Code Coverage**:
+  - Automatically runs with `bun test` command
+  - Generates lcov.info in coverage/ directory for IDE integration
+  - **Minimum 80% coverage required** - tests will fail if below threshold
+  - Use Coverage Gutters extension in VSCode to visualize coverage
+  - Coverage report available in coverage/index.html
 - **Debugging**: VSCode debugger works perfectly with standard TypeScript - no runtime transformations
   - Source maps enabled in tsconfig.json (`sourceMap: true`)
   - Debug configurations include `smartStep` and `skipFiles` for better stepping
@@ -186,6 +192,7 @@ Release process using script/release.ts:
 Health check endpoint for monitoring.
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -198,6 +205,7 @@ Health check endpoint for monitoring.
 Test endpoint to verify type system and validation.
 
 **Request Body:**
+
 ```json
 {
   "name": "World",     // string, minLength: 3, default: "World"
@@ -207,6 +215,7 @@ Test endpoint to verify type system and validation.
 ```
 
 **Response:**
+
 ```json
 {
   "message": "Test completed successfully",
@@ -230,6 +239,7 @@ Test endpoint to verify type system and validation.
 Test command to verify type system.
 
 **Examples:**
+
 ```bash
 bun run src/app.ts test
 bun run src/app.ts test "John" 5
@@ -241,6 +251,7 @@ bun run src/app.ts test "John" 5 --verbose
 Start HTTP server (default port 3000).
 
 **Examples:**
+
 ```bash
 bun run src/app.ts server
 PORT=8080 bun run src/app.ts server
@@ -251,6 +262,7 @@ PORT=8080 bun run src/app.ts server
 Show help message with available commands and options.
 
 **Example:**
+
 ```bash
 bun run src/app.ts --help
 ```

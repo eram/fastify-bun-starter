@@ -104,7 +104,7 @@ export interface ValidatorDef {
 }
 
 export interface ValueValidator<T = unknown> {
-    valueOf(value: unknown): T | undefined;
+    parse(value: unknown): T | undefined;
     push(validator: (arg: T) => T): number;
     clear(): void;
     isOptional?: boolean; // Flag to indicate if validator is optional
@@ -128,7 +128,7 @@ export abstract class TypeVal<T> implements ValueValidator<T> {
         return this._innerValidator;
     }
 
-    valueOf(value: unknown): T | undefined {
+    parse(value: unknown): T | undefined {
         // Fast path for validators with no additional constraints
         if (this._validators.length === 0) {
             return value as T;
@@ -187,13 +187,9 @@ export abstract class TypeVal<T> implements ValueValidator<T> {
         return this;
     }
 
-    parse(value: unknown): T {
-        return this.valueOf(value) as T;
-    }
-
     safeParse(value: unknown): [T | undefined, Error | undefined] {
         try {
-            return [this.valueOf(value) as T, undefined];
+            return [this.parse(value) as T, undefined];
         } catch (error) {
             return [undefined, error as Error];
         }
@@ -940,7 +936,7 @@ class LiteralVal<T extends string | number | boolean | null | undefined> extends
         return { ...super.defs(), const: value, value };
     }
 
-    override valueOf(value: unknown): T {
+    override parse(value: unknown): T {
         if (value !== this._literalValue) {
             const expectedStr =
                 this._literalValue === null
@@ -1000,7 +996,7 @@ class NanVal extends TypeVal<number> {
         return { ...super.defs(), not: {} };
     }
 
-    override valueOf(value: unknown): number | undefined {
+    override parse(value: unknown): number | undefined {
         if (!Number.isNaN(value)) {
             throw verror(`Expected NaN, got ${value}`);
         }
@@ -1060,11 +1056,11 @@ class NullableVal<T> extends TypeVal<T | null> {
         return result;
     }
 
-    override valueOf(value: unknown): T | null | undefined {
+    override parse(value: unknown): T | null | undefined {
         if (value === null) {
             return null;
         }
-        return this._innerValidator!.valueOf(value) as T | null;
+        return this._innerValidator!.parse(value) as T | null;
     }
 }
 
@@ -1111,11 +1107,11 @@ class NullishVal<T> extends TypeVal<T | null | undefined> {
         return result;
     }
 
-    override valueOf(value: unknown): T | null | undefined {
+    override parse(value: unknown): T | null | undefined {
         if (value === null || value === undefined) {
             return value as T | null | undefined;
         }
-        return this._innerValidator!.valueOf(value) as T | null | undefined;
+        return this._innerValidator!.parse(value) as T | null | undefined;
     }
 }
 
@@ -1298,7 +1294,7 @@ class ArrVal extends TypeVal<Array<unknown>> {
                 throw verror(`Expected array, got ${typeof val}`);
             }
             if (this._itemValidator) {
-                return val.map((item) => this._itemValidator!.valueOf(item));
+                return val.map((item) => this._itemValidator!.parse(item));
             }
             return val;
         });
@@ -1380,7 +1376,7 @@ class SetVal extends TypeVal<Set<unknown>> {
             if (Array.isArray(val)) {
                 const set = new Set<unknown>();
                 for (const item of val) {
-                    const validated = this._itemValidator ? this._itemValidator.valueOf(item) : item;
+                    const validated = this._itemValidator ? this._itemValidator.parse(item) : item;
                     set.add(validated);
                 }
                 return set;
@@ -1424,7 +1420,7 @@ class MapVal extends TypeVal<Map<string, unknown>> {
                 const entries = Object.entries(val as Record<string, unknown>);
                 const map = new Map<string, unknown>();
                 for (const [k, v] of entries) {
-                    const validated = this._valueValidator ? this._valueValidator.valueOf(v) : v;
+                    const validated = this._valueValidator ? this._valueValidator.parse(v) : v;
                     map.set(k, validated);
                 }
                 return map;
@@ -1511,7 +1507,7 @@ class UnionVal<T> extends TypeVal<T> {
         return this._unionValidators;
     }
 
-    override valueOf(value: unknown): T | undefined {
+    override parse(value: unknown): T | undefined {
         // First, check if there are base validators (like optional()) and apply them
         // This handles optional() and default() at the union level
         if (this._validators.length > 0) {
@@ -1530,7 +1526,7 @@ class UnionVal<T> extends TypeVal<T> {
         // Try each validator in order (first-match strategy)
         for (const validator of this._unionValidators) {
             try {
-                const result = validator.valueOf(value);
+                const result = validator.parse(value);
                 return result as T;
             } catch (err) {
                 // Collect error message
@@ -1630,7 +1626,7 @@ export const isoTime = () => new StrVal().isoTime();
 export const isoDatetime = () => new StrVal().isoDatetime();
 export const isoDuration = () => new StrVal().isoDuration();
 
-export function parse<T extends Record<string, unknown>>(validator: Schema, obj: unknown): T | undefined {
+export function parseSchema<T extends Record<string, unknown>>(validator: Schema, obj: unknown): T | undefined {
     if (typeof obj !== 'object' || obj === undefined) return undefined;
 
     const res = {} as T;
@@ -1663,7 +1659,7 @@ export function parse<T extends Record<string, unknown>>(validator: Schema, obj:
                 throw verror(`Required property '${prop}' is missing`);
             }
 
-            const value = validatorInstance.valueOf(inputValue);
+            const value = validatorInstance.parse(inputValue);
             if (value !== undefined) {
                 (res as Record<string, unknown>)[prop] = value;
             }
@@ -1678,18 +1674,21 @@ export function parse<T extends Record<string, unknown>>(validator: Schema, obj:
         const inputValue = objRecord[prop];
 
         if (inputValue === undefined) {
-            if (validatorInstance.isOptional !== true) {
+            if (!validatorInstance.isOptional) {
                 throw verror(`Required property '${prop}' is missing`);
             }
-            // For optional fields with defaults, still call valueOf to get the default value
-            const value = validatorInstance.valueOf(inputValue);
-            if (value !== undefined) {
-                (res as Record<string, unknown>)[prop] = value;
+            // For optional fields, skip validation - don't call valueOf with undefined
+            // unless there's a default value defined
+            if (validatorInstance.defs()?.default !== undefined) {
+                const value = validatorInstance.parse(inputValue);
+                if (value !== undefined) {
+                    (res as Record<string, unknown>)[prop] = value;
+                }
             }
             continue;
         }
 
-        const value = validatorInstance.valueOf(inputValue);
+        const value = validatorInstance.parse(inputValue);
         if (value !== undefined) {
             (res as Record<string, unknown>)[prop] = value;
         }
@@ -1708,3 +1707,8 @@ export function safeParse<T extends Record<string, unknown>>(
         return [undefined, err instanceof Error ? err : new Error(Object(err).message ?? String(err))];
     }
 }
+
+/**
+ * Alias for backward compatibility - parse does the same as parseSchema
+ */
+export const parse = parseSchema;

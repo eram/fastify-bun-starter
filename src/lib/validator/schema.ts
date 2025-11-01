@@ -7,8 +7,8 @@
  * @module jsonSchema
  */
 
-import type { Schema, ValidatorDef, ValueValidator } from './jsonValidator';
-import * as v from './jsonValidator';
+import type { Schema, ValidatorDef, ValueValidator } from './validator';
+import * as v from './validator';
 
 // ============================================================================
 // Types

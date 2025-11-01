@@ -11,8 +11,9 @@
       "src/**/*.js",
       "src/**/*.ts",
       "ci/**/*.js",
-      "script/**/*.js",
-      "script/**/*.cjs",
+      "script/release.ts",
+      "script/rimraf.ts",
+      "!!script/bench_*.js",
       "!!**/*.min.js",
       "!!node_modules"
     ]

@@ -6,9 +6,9 @@
  * Supports glob patterns and multiple paths
  */
 
+import type { RmOptions } from 'node:fs';
 import { promises as fs } from 'node:fs';
 import { parseArgs } from 'node:util';
-import type { RmOptions } from 'node:fs';
 
 const isGlobPattern = (str: string): boolean => /[*?{}[\]]/.test(str);
 
@@ -24,7 +24,7 @@ interface RimrafOptions extends RmOptions {
  */
 async function rimraf(
     pattern: string,
-    options: RimrafOptions = { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }
+    options: RimrafOptions = { recursive: true, force: true, maxRetries: 3, retryDelay: 100 },
 ): Promise<number> {
     try {
         const matches: string[] = [];

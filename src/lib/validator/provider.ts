@@ -1,12 +1,11 @@
 /**
- * Fastify Type Provider for jsonValidator
- *
+ * Fastify Type Provider for json Validator
  * Provides type-safe request/response validation using our custom validator
  */
 
-import type { FastifySchemaCompiler, FastifyTypeProvider } from 'fastify';
-import type { Schema, ValueValidator } from './jsonValidator';
-import { parse } from './jsonValidator';
+import type { FastifySchema, FastifySchemaCompiler, FastifyTypeProvider } from 'fastify';
+import type { Schema, ValueValidator } from './validator';
+import { parseSchema } from './validator';
 
 /**
  * JSON Schema type provider for Fastify
@@ -36,21 +35,22 @@ export interface JsonSchemaTypeProvider extends FastifyTypeProvider {
  */
 // biome-ignore lint/style/useNamingConvention: Fastify schema compiler convention
 export const JsonSchemaValidatorCompiler: FastifySchemaCompiler<ValueValidator | Schema> = ({ schema, httpPart: _httpPart }) => {
-    return (data: unknown): unknown => {
+    return (data: unknown): { value?: unknown; error?: Error } => {
         try {
             // For non-body parts, we could apply type coercion here if needed
             // For now, we'll keep consistent behavior across all parts
             const value = data;
 
-            // Check if it's a ValueValidator (has its own valueOf method and _validators property)
-            // We need to check for _validators because all objects inherit valueOf from Object.prototype
-            if ('_validators' in schema && typeof schema.valueOf === 'function') {
-                const result = schema.valueOf(value);
+            // Check if it's a ValueValidator (has its own parse method and _validators property)
+            // We need to check for _validators because objects might have parse methods too
+            if ('_validators' in schema && typeof schema.parse === 'function') {
+                const validator = schema as ValueValidator<unknown>;
+                const result = validator.parse(value);
                 return { value: result };
             }
 
-            // If it's a Schema (object with validators as properties), use parse
-            const result = parse(schema as Schema, value);
+            // If it's a Schema (object with validators as properties), use parseSchema
+            const result = parseSchema(schema as Schema, value);
             return { value: result };
         } catch (error) {
             // Return error in Fastify's expected format

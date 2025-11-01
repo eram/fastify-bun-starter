@@ -12,11 +12,11 @@
  * 5. json-schema-to-zod -https://www.npmjs.com/package/json-schema-to-zod
  *
  */
-export * from './fastify-type-provider';
-export * from './jsonSchema';
-export * from './jsonValidator';
+export * from './provider';
+export * from './schema';
+export * from './validator';
 
-import { fromJsonSchema, toJsonSchema } from './jsonSchema';
+import { fromJsonSchema, toJsonSchema } from './schema';
 // Re-export core validator functions and types for direct access
 import {
     array,
@@ -56,7 +56,7 @@ import {
     type ObjVal,
     object,
     optional,
-    parse,
+    parseSchema,
     record,
     type StrVal,
     safeParse,
@@ -71,7 +71,7 @@ import {
     url,
     uuid,
     voidValidator,
-} from './jsonValidator';
+} from './validator';
 
 // Zod-like API export for backwards compatibility
 export const z = {
@@ -132,7 +132,7 @@ export const z = {
     int,
 
     // Utilities
-    parse,
+    parseSchema,
     safeParse, // NB!! different return type than zod's
 
     // JSON Schema conversion (for zod compatibility)

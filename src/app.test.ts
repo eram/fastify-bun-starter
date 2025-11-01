@@ -1,9 +1,5 @@
 import { ok, strictEqual } from 'node:assert/strict';
 import { describe, test } from 'node:test';
-
-// Set test mode to prevent auto-run
-process.env.FASTIFY_TEST_MODE = 'true';
-
 import { app } from './app';
 
 describe('app', () => {
@@ -19,8 +15,14 @@ describe('app', () => {
         const healthResponse = await app.inject({ method: 'GET', url: '/health' });
         strictEqual(healthResponse.statusCode, 200, 'Health endpoint should be available');
 
-        const testResponse = await app.inject({ method: 'POST', url: '/test', payload: {} });
-        strictEqual(testResponse.statusCode, 200, 'Test endpoint should be available');
+        const helloResponse = await app.inject({ method: 'POST', url: '/hello', payload: {} });
+        strictEqual(helloResponse.statusCode, 200, 'Test endpoint should be available');
+
+        const docsResponse = await app.inject({ method: 'GET', url: '/docs' });
+        strictEqual(docsResponse.statusCode, 200, 'Swagger UI endpoint should be available');
+
+        const docsJsonResponse = await app.inject({ method: 'GET', url: '/docs/json' });
+        strictEqual(docsJsonResponse.statusCode, 200, 'OpenAPI spec endpoint should be available');
     });
 });
 
@@ -36,14 +38,15 @@ describe('GET /health endpoint', () => {
         const json = response.json();
         strictEqual(json.status, 'ok', 'Should return ok status');
         ok(json.timestamp, 'Should include timestamp');
+        // workers field is optional (only available in cluster mode)
     });
 });
 
-describe('POST /test endpoint', () => {
+describe('POST /hello endpoint', () => {
     test('accepts valid request with defaults', async () => {
         const response = await app.inject({
             method: 'POST',
-            url: '/test',
+            url: '/hello',
             payload: {},
         });
 
@@ -59,7 +62,7 @@ describe('POST /test endpoint', () => {
     test('accepts custom parameters', async () => {
         const response = await app.inject({
             method: 'POST',
-            url: '/test',
+            url: '/hello',
             payload: {
                 name: 'TestUser',
                 count: 5,
@@ -78,7 +81,7 @@ describe('POST /test endpoint', () => {
     test('includes user data when verbose is true', async () => {
         const response = await app.inject({
             method: 'POST',
-            url: '/test',
+            url: '/hello',
             payload: {
                 name: 'Verbose',
                 count: 1,
@@ -98,7 +101,7 @@ describe('POST /test endpoint', () => {
     test('validates minimum string length', async () => {
         const response = await app.inject({
             method: 'POST',
-            url: '/test',
+            url: '/hello',
             payload: {
                 name: 'AB', // Only 2 characters, min is 3
                 count: 1,
@@ -116,7 +119,7 @@ describe('POST /test endpoint', () => {
     test('validates positive count', async () => {
         const response = await app.inject({
             method: 'POST',
-            url: '/test',
+            url: '/hello',
             payload: {
                 name: 'Test',
                 count: 0, // Must be minimum 1
@@ -132,6 +135,34 @@ describe('POST /test endpoint', () => {
     test('validates email format when provided', async () => {
         // Note: This tests the User schema structure, though not directly via endpoint
         // The endpoint validates TestRequestSchema, but we can verify the schema exists
-        ok(true, 'User schema with email validation is defined in app.ts');
+        ok(true, 'User schema with email validation is defined in routes.ts');
+    });
+});
+
+describe('Swagger documentation', () => {
+    test('GET /docs returns HTML', async () => {
+        const response = await app.inject({
+            method: 'GET',
+            url: '/docs',
+        });
+
+        strictEqual(response.statusCode, 200, 'Should return 200 status code');
+        ok(response.headers['content-type']?.includes('text/html'), 'Should return HTML content type');
+        ok(response.body.includes('swagger-ui'), 'Should contain Swagger UI HTML');
+    });
+
+    test('GET /docs/json returns OpenAPI spec', async () => {
+        const response = await app.inject({
+            method: 'GET',
+            url: '/docs/json',
+        });
+
+        strictEqual(response.statusCode, 200, 'Should return 200 status code');
+
+        const json = response.json();
+        strictEqual(json.openapi, '3.0.0', 'Should have OpenAPI version');
+        ok(json.info, 'Should have info section');
+        ok(json.info.title, 'Should have title');
+        ok(json.paths, 'Should have paths');
     });
 });

@@ -1,0 +1,10 @@
+[test]
+# Preload mock utility to inject global mocks
+preload = ["./src/util/mock.ts"]
+
+# Coverage configuration
+# Note: coverage, coverageReporter are passed via CLI for better control
+# coverageSkipTestFiles excludes test files from coverage (default: false)
+coverageSkipTestFiles = true
+# coveragePathIgnorePatterns excludes specific patterns from coverage
+coveragePathIgnorePatterns = ["**/cluster.ts", "**/index.ts"]

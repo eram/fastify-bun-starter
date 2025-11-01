@@ -25,17 +25,19 @@
   },
   "homepage": "https://github.com/eram/fastify-bun-starter#readme",
   "scripts": {
-    "app": "bun run src/app.ts",
+    "app": "bun run src/cli.ts",
     "build": "docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target prod -t fastify-bun-starter:latest . && docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target scan . && docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target logs --output type=local,dest=./build-logs .",
     "build:grype": "docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target scan .",
     "clean": "bun run rimraf -- -q dist build build-logs coverage node_modules .cache .vitest *.log *.cpuprofile",
-    "dev": "bun run --hot src/app.ts",
+    "cluster": "bun run src/cluster.ts",
+    "dev": "bun run --hot src/cli.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "release": "bun run script/release.ts",
     "rimraf": "bun run script/rimraf.ts",
-    "test": "bun run lint && bun test src/app.test.ts ci",
-    "test:integration": "bun test ci",
+    "server": "bun run src/cli.ts server",
+    "test": "bun run lint && bun test --coverage --coverage-reporter=lcov src && bun run script/coverage-report.ts",
+    "test:ci": "bun test ci",
     "test:watch": "bun test --watch"
   },
   "dependencies": {
