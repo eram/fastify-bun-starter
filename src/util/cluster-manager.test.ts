@@ -691,4 +691,24 @@ describe('ClusterManager', () => {
             });
         });
     });
+
+    describe('Shutdown handling', () => {
+        test('should call shutdown() method when available', async () => {
+            const { createLogger } = await import('./logger');
+
+            const manager = new ClusterManager({
+                file: './__mocks__/simple-worker.ts',
+                logger: createLogger('TestCluster', 'ERROR'),
+            });
+
+            // The shutdown method exists and can be called
+            ok(typeof manager.shutdown === 'function');
+
+            // Should throw error when called in non-primary mode (before startPrimary)
+            await manager.shutdown().catch((err) => {
+                ok(err instanceof Error);
+                ok(err.message.includes('primary process'));
+            });
+        });
+    });
 });

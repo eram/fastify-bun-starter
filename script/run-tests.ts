@@ -8,6 +8,14 @@
 //
 
 import { spawn } from 'node:child_process';
+import { existsSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+
+// Clean up coverage folder before running tests
+const coveragePath = join(process.cwd(), 'coverage');
+if (existsSync(coveragePath)) {
+    rmSync(coveragePath, { recursive: true, force: true });
+}
 
 // Parse command line arguments
 // If we have specific test files (non-default pattern) or --verbose flag, turn on verbose

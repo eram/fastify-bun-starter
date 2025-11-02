@@ -6,7 +6,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { red } from '../src/util/shell';
+import { red, yellow } from '../src/util/shell';
 
 // Console shortcuts
 const { log, error } = console;
@@ -36,12 +36,13 @@ interface FolderCoverage {
     uncovered: number[];
     files: Array<{
         name: string;
-        path: string; // Full relative path for links
+        path: string; // Full relative path (stored but not displayed)
         funcs: number;
         funcsCov: number;
         lines: number;
         linesCov: number;
         uncovered: number[];
+        ignored: boolean; // Has Istanbul ignore comment
     }>;
 }
 
@@ -113,26 +114,65 @@ function formatName(name: string, indent: number = 0): string {
     return indentedName.padEnd(FILE_WIDTH);
 }
 
-/** Format percentage value with color if below threshold */
-function formatPercent(value: number, isFailing: boolean): string {
+/** Format percentage value with color based on status */
+function formatPercent(value: number, isFailing: boolean, isIgnored: boolean = false): string {
     const formatted = value.toString().padStart(PERCENT_WIDTH);
+    if (isIgnored) return yellow`${formatted}`;
     return isFailing ? red`${formatted}` : formatted;
 }
 
-/** Format uncovered lines for display, truncating to fit column width */
+/** Check if a file has Istanbul ignore comment */
+function hasIstanbulIgnore(filePath: string): boolean {
+    try {
+        const content = readFileSync(filePath, 'utf-8');
+        // Check first few lines for istanbul ignore comment
+        const firstLines = content.split('\n').slice(0, 5).join('\n');
+        return /\/\*\s*istanbul\s+ignore\s+file\s*\*\//.test(firstLines);
+    } catch {
+        return false;
+    }
+}
+
+/** Format uncovered lines for display, using ranges for consecutive lines */
 function formatUncovered(uncovered: number[]): string {
     if (uncovered.length === 0) return ''.padEnd(UNCOVERED_WIDTH);
 
-    // Try to fit as many line numbers as possible
-    let formatted = uncovered.join(',');
+    // Convert consecutive numbers to ranges (e.g., "196,197,198,199" -> "196-199")
+    const ranges: string[] = [];
+    let rangeStart = uncovered[0];
+    let rangeEnd = uncovered[0];
 
-    // If too long, use ellipsis format - fit as many numbers as possible
+    for (let i = 1; i <= uncovered.length; i++) {
+        if (i < uncovered.length && uncovered[i] === rangeEnd + 1) {
+            // Continue the range
+            rangeEnd = uncovered[i];
+        } else {
+            // End the range
+            if (rangeStart === rangeEnd) {
+                ranges.push(rangeStart.toString());
+            } else if (rangeEnd === rangeStart + 1) {
+                // Only 2 consecutive numbers, use comma instead of range
+                ranges.push(`${rangeStart},${rangeEnd}`);
+            } else {
+                // 3+ consecutive numbers, use range
+                ranges.push(`${rangeStart}-${rangeEnd}`);
+            }
+            if (i < uncovered.length) {
+                rangeStart = uncovered[i];
+                rangeEnd = uncovered[i];
+            }
+        }
+    }
+
+    let formatted = ranges.join(',');
+
+    // If too long, truncate with ellipsis
     if (formatted.length > UNCOVERED_WIDTH) {
-        // Try progressively more numbers until we can't fit
-        let count = uncovered.length;
+        // Try progressively fewer ranges until we can fit
+        let count = ranges.length;
         while (count > 1) {
-            const suffix = `...+${uncovered.length - count}`;
-            const prefix = uncovered.slice(0, count).join(',');
+            const suffix = `...+${uncovered.length - uncovered.slice(0, count).length}`;
+            const prefix = ranges.slice(0, count).join(',');
             const candidate = prefix + suffix;
 
             if (candidate.length <= UNCOVERED_WIDTH) {
@@ -161,10 +201,16 @@ try {
     const folders = new Map<string, FolderCoverage>();
 
     for (const fileCov of coverageFiles) {
-        totalLines += fileCov.lines;
-        coveredLines += fileCov.linesCov;
-        totalFunctions += fileCov.funcs;
-        coveredFunctions += fileCov.funcsCov;
+        // Check if file has Istanbul ignore comment
+        const hasIgnore = hasIstanbulIgnore(fileCov.file);
+
+        // Only count files without Istanbul ignore in overall coverage
+        if (!hasIgnore) {
+            totalLines += fileCov.lines;
+            coveredLines += fileCov.linesCov;
+            totalFunctions += fileCov.funcs;
+            coveredFunctions += fileCov.funcsCov;
+        }
 
         // Normalize path
         let displayPath = fileCov.file.replace(process.cwd(), '').replace(/\\/g, '/');
@@ -201,6 +247,7 @@ try {
             lines: fileCov.lines,
             linesCov: fileCov.linesCov,
             uncovered: fileCov.uncovered.sort((a, b) => a - b),
+            ignored: hasIgnore,
         });
     }
 
@@ -217,9 +264,9 @@ try {
     const allFilesLinesFail = allFilesLines < THRESH;
 
     tableData[formatName('All files')] = {
-        '% Funcs': formatPercent(allFilesFuncs, allFilesFuncsFail),
-        '% Lines': formatPercent(allFilesLines, allFilesLinesFail),
-        'Uncovered Line #s': formatUncovered([]),
+        funcs: formatPercent(allFilesFuncs, allFilesFuncsFail),
+        lines: formatPercent(allFilesLines, allFilesLinesFail),
+        uncov: formatUncovered([]),
     };
 
     // Sort folders alphabetically
@@ -235,9 +282,9 @@ try {
 
         const folderName = formatName(folder, 1);
         tableData[folderFail ? red`${folderName}` : folderName] = {
-            '% Funcs': formatPercent(folderFuncsPct, folderFuncsFail),
-            '% Lines': formatPercent(folderLinesPct, folderLinesFail),
-            'Uncovered Line #s': formatUncovered(folderData.uncovered.sort((a, b) => a - b)),
+            funcs: formatPercent(folderFuncsPct, folderFuncsFail),
+            lines: formatPercent(folderLinesPct, folderLinesFail),
+            uncov: formatUncovered(folderData.uncovered.sort((a, b) => a - b)),
         };
 
         // Add files in this folder
@@ -246,23 +293,37 @@ try {
             const fileLinesPct = file.lines > 0 ? Math.round((file.linesCov / file.lines) * 100) : 100;
             const fileFuncsFail = fileFuncsPct < THRESH;
             const fileLinesFail = fileLinesPct < THRESH;
+            // Files with Istanbul ignore don't fail the build
+            const fileFail = !file.ignored && (fileLinesFail || fileFuncsFail);
 
-            tableData[formatName(file.name, 3)] = {
-                '% Funcs': formatPercent(fileFuncsPct, fileFuncsFail),
-                '% Lines': formatPercent(fileLinesPct, fileLinesFail),
-                'Uncovered Line #s': formatUncovered(file.uncovered),
+            // Show filename only (not clickable, but clean display)
+            // Ignored files: white name, yellow percentages
+            // Failing files: red name and percentages
+            const indent = '   '; // 3 spaces for file indentation
+            const displayName = fileFail ? red`${file.name}` : file.name;
+            const clickableFile = indent + displayName;
+
+            tableData[clickableFile] = {
+                funcs: formatPercent(fileFuncsPct, fileFuncsFail, file.ignored),
+                lines: formatPercent(fileLinesPct, fileLinesFail, file.ignored),
+                uncov: formatUncovered(file.uncovered),
             };
         }
     }
 
-    // Print custom table with clickable links (console.table escapes ANSI codes)
+    // Print custom table (console.table escapes ANSI codes, so we build manually)
     log('📊 Coverage Report:');
     log('┌────────────────────────────────┬─────────┬─────────┬────────────────────────────────┐');
     log('│ File                           │ % Funcs │ % Lines │ Uncovered Line #s              │');
     log('├────────────────────────────────┼─────────┼─────────┼────────────────────────────────┤');
 
     for (const [filename, data] of Object.entries(tableData)) {
-        log(`│ ${filename} │ ${data['% Funcs']} │ ${data['% Lines']} │ ${data['Uncovered Line #s']} │`);
+        // Calculate visible length (excluding ANSI codes) for proper padding
+        // biome-ignore lint/suspicious/noControlCharactersInRegex: need to strip ANSI escape codes for length calculation
+        const visibleLength = filename.replace(/\x1b\[[0-9;]*m/g, '').length;
+        const paddedFilename = filename + ' '.repeat(Math.max(0, FILE_WIDTH - visibleLength));
+
+        log(`│ ${paddedFilename} │ ${data.funcs} │ ${data.lines} │ ${data.uncov} │`);
     }
 
     log('└────────────────────────────────┴─────────┴─────────┴────────────────────────────────┘');

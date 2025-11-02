@@ -227,9 +227,7 @@ export class ClusterManager {
             });
 
             await Promise.all(shutdownPromises);
-
             this._info('All workers shut down. Exiting primary.');
-
             process.exit(0);
         };
 
