@@ -129,7 +129,10 @@ export class Env {
      * @param max - The maximum value for numeric keys.
      * @returns The value of the environment variable or the default value.
      */
-    static get<T extends EnvValue>(key: string, def?: T, min?: EnvValue, max?: EnvValue): T {
+    static get(key: string, def: string, min?: string, max?: string): string;
+    static get(key: string, def: number, min?: number, max?: number): number;
+    static get(key: string, def: boolean): boolean;
+    static get<T extends EnvValue>(key: string, def: T, min?: EnvValue, max?: EnvValue): T {
         const raw = process.env[key];
         let rc: unknown;
         switch (typeof def) {

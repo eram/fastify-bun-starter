@@ -1,110 +1,144 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { type Infer, z } from '../lib/validator';
 
 /**
- * User schema - Example of a nested object type
- * Demonstrates validation with multiple constraints
+ * IETF BCP 47 locale pattern
+ * Matches language-COUNTRY format (e.g., en-US, de-DE, fr-FR)
  */
-const userSchema = {
-    name: z.string().min(3).max(50).describe('User full name (3-50 characters)'),
-    age: z.number().min(1).describe('User age in years (must be positive)'),
-    email: z.string().email().optional().describe('Optional email address (validated format)'),
-};
+const IETF_BCP47_PATTERN = /^[a-z]{2,3}(-[A-Z]{2})?$/;
 
 /**
- * Hello request schema - Example REST API request body
- * Demonstrates default values, constraints, and validation
+ * List of commonly supported locales
+ * This is a subset - Node.js Intl supports many more
  */
-const helloRequestSchema = {
-    name: z.string().min(3).default('World').describe('Name to greet (minimum 3 characters, default: "World")'),
-    count: z.number().min(1).default(1).describe('Number of times to repeat greeting (minimum 1, default: 1)'),
-    verbose: z.boolean().default(false).describe('Include detailed user object in response (default: false)'),
-};
-
-type User = Infer<typeof userSchema>;
-type HelloRequest = Infer<typeof helloRequestSchema>;
+const COMMON_LOCALES = [
+    'en-US',
+    'en-GB',
+    'de-DE',
+    'fr-FR',
+    'es-ES',
+    'it-IT',
+    'ja-JP',
+    'zh-CN',
+    'ko-KR',
+    'pt-BR',
+    'ru-RU',
+    'ar-SA',
+    'ar-EG',
+    'he-IL',
+    'hi-IN',
+];
 
 /**
- * Register hello endpoint - Example REST API endpoint
+ * Number formatting request schema
+ * Validates:
+ * - number: 1-15 digits, positive or negative
+ * - locale: IETF BCP 47 format (e.g., en-US)
+ */
+const numberFormatRequestSchema = {
+    number: z.number().describe('Number to format (1-15 digits, can be positive or negative)'),
+    locale: z
+        .string()
+        .regex(IETF_BCP47_PATTERN, 'Locale must be in IETF BCP 47 format (e.g., en-US)')
+        .describe('Locale in IETF BCP 47 format (e.g., en-US, de-DE)'),
+};
+
+type NumberFormatRequest = Infer<typeof numberFormatRequestSchema>;
+
+/**
+ * Custom validator to check if number has max 15 digits
+ */
+function hasMaxDigits(num: number, maxDigits: number): boolean {
+    const absNum = Math.abs(num);
+    const digits = absNum === 0 ? 1 : Math.floor(Math.log10(absNum)) + 1;
+    return digits <= maxDigits;
+}
+
+/**
+ * Check if a locale is supported by testing Intl.NumberFormat
+ */
+function isLocaleSupported(locale: string): boolean {
+    try {
+        const formatter = new Intl.NumberFormat(locale);
+        const resolvedLocale = formatter.resolvedOptions().locale;
+        // If the resolved locale is different, the requested locale might not be fully supported
+        return resolvedLocale.toLowerCase().startsWith(locale.toLowerCase().split('-')[0]);
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Register number formatting endpoint
  *
- * This endpoint serves as a comprehensive example demonstrating:
- * - Request body validation with type safety
- * - Default values and constraints
- * - Nested object types
- * - Conditional response fields
- * - Swagger/OpenAPI documentation
- *
- * @example
  * POST /hello
  * {
- *   "name": "Alice",
- *   "count": 5,
- *   "verbose": true
+ *   "number": 123456789,
+ *   "locale": "en-US"
+ * }
+ *
+ * Response 200:
+ * {
+ *   "formatted": "123,456,789"
+ * }
+ *
+ * Response 400 (unsupported locale):
+ * {
+ *   "message": "Unsupported locale: xx-XX",
+ *   "availableLocales": ["en-US", "de-DE", ...]
  * }
  */
 export async function registerHelloRoute(app: FastifyInstance) {
     // biome-ignore lint/style/useNamingConvention: Fastify generic type parameter
-    app.post<{ Body: HelloRequest }>(
+    app.post<{ Body: NumberFormatRequest }>(
         '/hello',
         {
             schema: {
-                body: helloRequestSchema,
+                body: numberFormatRequestSchema,
                 response: {
                     200: {
-                        message: z.string().describe('Success message'),
-                        data: z.object({
-                            name: z.string().describe('Echoed name from request'),
-                            count: z.number().describe('Echoed count from request'),
-                            verbose: z.boolean().describe('Echoed verbose flag from request'),
-                            user: z
-                                .object(userSchema)
-                                .optional()
-                                .describe('Detailed user object (only included when verbose=true)'),
-                        }),
+                        formatted: z.string().describe('Formatted number string'),
+                    },
+                    400: {
+                        message: z.string().describe('Error message'),
+                        availableLocales: z.array(z.string()).optional().describe('List of commonly available locales'),
                     },
                 },
             },
         },
-        async (request) => {
-            // Request body is automatically validated by Fastify using the schema above
-            const { name, count, verbose } = request.body;
+        // biome-ignore lint/style/useNamingConvention: Fastify generic type parameter
+        async (request: FastifyRequest<{ Body: NumberFormatRequest }>, reply: FastifyReply) => {
+            const { number, locale } = request.body;
 
-            // Log request details (for development/debugging)
-            console.log('=== Fastify Type System Test ===');
-            console.log(`Hello ${name}!`);
-            console.log(`Count: ${count}`);
-            console.log(`Verbose mode: ${verbose}`);
-
-            // Example: Create a typed user object demonstrating nested validation
-            // In a real API, this would come from a database or external service
-            const user: User = {
-                name: 'John Doe',
-                age: 30,
-                email: 'john@example.com',
-            };
-
-            // Conditionally include detailed user data based on verbose flag
-            if (verbose) {
-                console.log('\nUser object with JSON Validator types:');
-                console.log(JSON.stringify(user, null, 2));
+            // Validate number has max 15 digits
+            if (!hasMaxDigits(number, 15)) {
+                return reply.status(400).send({
+                    message: 'Number must have at most 15 digits',
+                });
             }
 
-            // Success indicators for example/test purposes
-            console.log('\n✓ Type compiler is working!');
-            console.log('✓ JSON Validator validation is working!');
-            console.log('✓ HTTP server is working!');
+            // Check if locale is supported
+            if (!isLocaleSupported(locale)) {
+                return reply.status(400).send({
+                    message: `Unsupported locale: ${locale}`,
+                    availableLocales: COMMON_LOCALES,
+                });
+            }
 
-            // Return structured response matching the schema
-            // Note: 'user' field only included when verbose=true
-            return {
-                message: 'Test completed successfully',
-                data: {
-                    name,
-                    count,
-                    verbose,
-                    ...(verbose && { user }), // Conditional field based on request
-                },
-            };
+            // Format the number using Intl.NumberFormat
+            try {
+                const formatter = new Intl.NumberFormat(locale);
+                const formatted = formatter.format(number);
+
+                return {
+                    formatted,
+                };
+            } catch (error) {
+                return reply.status(400).send({
+                    message: `Failed to format number: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                    availableLocales: COMMON_LOCALES,
+                });
+            }
         },
     );
 }

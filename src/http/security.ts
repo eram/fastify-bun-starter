@@ -35,6 +35,10 @@ async function registerHelmet(app: FastifyInstance) {
  * Configurable via CORS_ALLOWED_ORIGINS environment variable
  * Format: comma-separated list of origins or "*" for all
  * Example: "https://example.com,https://app.example.com"
+ *
+ * Includes MCP-specific headers for Model Context Protocol support:
+ * - Mcp-Session-Id: Required for browser-based MCP clients to read session IDs
+ * - mcp-session-id: Required for browser-based MCP clients to send session IDs
  */
 async function registerCors(app: FastifyInstance) {
     const allowedOrigins: string = Env.get('CORS_ALLOWED_ORIGINS', '*');
@@ -44,8 +48,18 @@ async function registerCors(app: FastifyInstance) {
         origin,
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-        exposedHeaders: ['Content-Range', 'X-Content-Range'],
+        allowedHeaders: [
+            'Content-Type',
+            'Authorization',
+            'X-Requested-With',
+            'Accept',
+            'mcp-session-id', // MCP: Allow clients to send session ID
+        ],
+        exposedHeaders: [
+            'Content-Range',
+            'X-Content-Range',
+            'Mcp-Session-Id', // MCP: Allow clients to read session ID from responses
+        ],
         maxAge: 86400,
     });
 }
@@ -70,17 +84,52 @@ async function registerRateLimit(app: FastifyInstance) {
 }
 
 /**
- * Register all security plugins in the recommended order:
- * 1. Helmet (security headers first)
+ * Register DNS rebinding protection
+ * Validates Host header to prevent DNS rebinding attacks on local servers
+ * Only active when ALLOWED_HOSTS is configured
+ *
+ * DNS rebinding attack: Malicious DNS switches from external IP to localhost/127.0.0.1
+ * mid-request, tricking your local server into responding to attacker-controlled origins.
+ */
+function registerDnsRebindingProtection(app: FastifyInstance) {
+    const allowedHosts = Env.get('ALLOWED_HOSTS', '');
+
+    // Skip if not configured (production servers typically don't need this)
+    if (!allowedHosts) {
+        return;
+    }
+
+    const hosts = allowedHosts.split(',').map((h: string) => h.trim());
+
+    app.addHook('onRequest', async (request, reply) => {
+        const host = request.hostname; // Gets hostname without port
+
+        // Check if host is in allowed list
+        if (!hosts.includes(host)) {
+            reply.code(403).send({
+                error: 'Forbidden',
+                message: 'Host header not allowed',
+            });
+        }
+    });
+}
+
+/**
+ * Register all security plugins in parallel for better performance:
+ * 1. Helmet (security headers)
  * 2. CORS (handle cross-origin requests)
- * 3. Rate limiting (prevent abuse)
+ * 3. DNS rebinding protection (for local servers)
+ * 4. Rate limiting (prevent abuse)
  *
  * Body size and URL length limits are configured in server.ts via Fastify options.
  */
 export async function registerSecurityPlugins(app: FastifyInstance) {
-    await registerHelmet(app);
-    await registerCors(app);
-    await registerRateLimit(app);
+    await Promise.all([
+        registerHelmet(app),
+        registerCors(app),
+        registerDnsRebindingProtection(app),
+        registerRateLimit(app),
+    ]);
 
     console.log('✓ Security plugins registered');
 }

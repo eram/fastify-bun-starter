@@ -24,6 +24,7 @@ USAGE:
 
 COMMANDS:
   server                Start HTTP server (default port 3000)
+  mcp                   Start MCP server with stdio transport
 
 OPTIONS:
   --help, -h            Show this help message
@@ -31,6 +32,7 @@ OPTIONS:
 EXAMPLES:
   bun run src/cli.ts server
   PORT=8080 bun run src/cli.ts server
+  bun run src/cli.ts mcp
 `);
         return;
     }
@@ -38,6 +40,12 @@ EXAMPLES:
     if (command === 'server') {
         const { startServer } = await import('./http/server');
         await startServer(app);
+    } else if (command === 'mcp') {
+        const { startStdioServer } = await import('./lib/mcp/stdio');
+        await startStdioServer({
+            name: 'fastify-bun-starter-mcp',
+            version: '1.0.0',
+        });
     } else {
         console.error(`Unknown command: ${command}`);
         console.error('Run with --help to see available commands');

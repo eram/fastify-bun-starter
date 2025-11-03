@@ -69,6 +69,34 @@ describe('HTTP Security Middleware', () => {
         ok(response.headers.has('access-control-allow-methods'), 'Should have Access-Control-Allow-Methods header');
     });
 
+    test('should expose MCP-specific CORS headers', async () => {
+        const response = await fetch(`${baseUrl}/health`, {
+            method: 'OPTIONS',
+            headers: {
+                origin: 'https://example.com',
+                'access-control-request-method': 'POST',
+                'access-control-request-headers': 'mcp-session-id',
+            },
+        });
+
+        strictEqual(response.status, 204, 'Preflight should return 204 No Content');
+
+        // Check that MCP headers are allowed
+        const allowedHeaders = response.headers.get('access-control-allow-headers');
+        ok(allowedHeaders, 'Should have Access-Control-Allow-Headers');
+        ok(
+            allowedHeaders?.toLowerCase().includes('mcp-session-id'),
+            'Should allow mcp-session-id header for MCP clients'
+        );
+
+        const exposedHeaders = response.headers.get('access-control-expose-headers');
+        ok(exposedHeaders, 'Should have Access-Control-Expose-Headers');
+        ok(
+            exposedHeaders?.includes('Mcp-Session-Id'),
+            'Should expose Mcp-Session-Id header for MCP clients to read'
+        );
+    });
+
     test('should apply rate limiting', async () => {
         // Make requests up to the limit
         const responses = [];
@@ -130,7 +158,7 @@ describe('HTTP Security Middleware', () => {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ name: 'Test', count: 1 }),
+            body: JSON.stringify({ number: 12345, locale: 'en-US' }),
         });
 
         strictEqual(response.status, 200, 'Should accept valid payload');
@@ -143,5 +171,99 @@ describe('HTTP Security Middleware', () => {
             const response = await fetch(`${baseUrl}${endpoint}`);
             ok(response.headers.has('x-content-type-options'), `${endpoint} should have security headers`);
         }
+    });
+});
+
+describe('DNS Rebinding Protection', () => {
+    let app: FastifyInstance;
+    const testPort = 3002;
+
+    afterEach(async () => {
+        if (app) {
+            await app.close();
+        }
+        // Clean up environment
+        delete process.env.ALLOWED_HOSTS;
+    });
+
+    test('should block requests with disallowed Host header', async () => {
+        // Configure DNS rebinding protection
+        process.env.ALLOWED_HOSTS = 'localhost,127.0.0.1';
+        process.env.PORT = String(testPort);
+
+        app = createServer();
+        await registerAll(app);
+        await app.listen({ port: testPort, host: '127.0.0.1' });
+
+        // Request with malicious Host header
+        const response = await fetch(`http://127.0.0.1:${testPort}/health`, {
+            headers: {
+                Host: 'evil.com',
+            },
+        });
+
+        strictEqual(response.status, 403, 'Should return 403 Forbidden for disallowed host');
+        const body = (await response.json()) as { error: string; message: string };
+        strictEqual(body.error, 'Forbidden');
+        strictEqual(body.message, 'Host header not allowed');
+    });
+
+    test('should allow requests with allowed Host header', async () => {
+        process.env.ALLOWED_HOSTS = 'localhost,127.0.0.1';
+        process.env.PORT = String(testPort);
+
+        app = createServer();
+        await registerAll(app);
+        await app.listen({ port: testPort, host: '127.0.0.1' });
+
+        // Request with allowed Host header
+        const response = await fetch(`http://127.0.0.1:${testPort}/health`, {
+            headers: {
+                Host: 'localhost',
+            },
+        });
+
+        strictEqual(response.status, 200, 'Should allow request with allowed host');
+    });
+
+    test('should skip DNS rebinding protection when not configured', async () => {
+        // Do not set ALLOWED_HOSTS
+        process.env.PORT = String(testPort);
+
+        app = createServer();
+        await registerAll(app);
+        await app.listen({ port: testPort, host: '127.0.0.1' });
+
+        // Request with any Host header should be allowed when protection is disabled
+        const response = await fetch(`http://127.0.0.1:${testPort}/health`, {
+            headers: {
+                Host: 'any-random-host.com',
+            },
+        });
+
+        strictEqual(response.status, 200, 'Should allow all hosts when ALLOWED_HOSTS is not configured');
+    });
+
+    test('should handle multiple allowed hosts', async () => {
+        process.env.ALLOWED_HOSTS = 'localhost,127.0.0.1,example.local';
+        process.env.PORT = String(testPort);
+
+        app = createServer();
+        await registerAll(app);
+        await app.listen({ port: testPort, host: '127.0.0.1' });
+
+        // Test each allowed host
+        for (const host of ['localhost', '127.0.0.1', 'example.local']) {
+            const response = await fetch(`http://127.0.0.1:${testPort}/health`, {
+                headers: { Host: host },
+            });
+            strictEqual(response.status, 200, `Should allow ${host}`);
+        }
+
+        // Test disallowed host
+        const badResponse = await fetch(`http://127.0.0.1:${testPort}/health`, {
+            headers: { Host: 'evil.com' },
+        });
+        strictEqual(badResponse.status, 403, 'Should block disallowed host');
     });
 });

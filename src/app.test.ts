@@ -15,8 +15,12 @@ describe('app', () => {
         const healthResponse = await app.inject({ method: 'GET', url: '/health' });
         strictEqual(healthResponse.statusCode, 200, 'Health endpoint should be available');
 
-        const helloResponse = await app.inject({ method: 'POST', url: '/hello', payload: {} });
-        strictEqual(helloResponse.statusCode, 200, 'Test endpoint should be available');
+        const helloResponse = await app.inject({
+            method: 'POST',
+            url: '/hello',
+            payload: { number: 12345, locale: 'en-US' },
+        });
+        strictEqual(helloResponse.statusCode, 200, 'Number formatting endpoint should be available');
 
         const docsResponse = await app.inject({ method: 'GET', url: '/docs' });
         strictEqual(docsResponse.statusCode, 200, 'Swagger UI endpoint should be available');
@@ -42,100 +46,75 @@ describe('GET /health endpoint', () => {
     });
 });
 
-describe('POST /hello endpoint', () => {
-    test('accepts valid request with defaults', async () => {
+describe('POST /hello endpoint (number formatting)', () => {
+    test('formats number with valid locale', async () => {
         const response = await app.inject({
             method: 'POST',
             url: '/hello',
-            payload: {},
+            payload: {
+                number: 123456,
+                locale: 'en-US',
+            },
         });
 
         strictEqual(response.statusCode, 200, 'Should return 200 status code');
 
         const json = response.json();
-        strictEqual(json.message, 'Test completed successfully');
-        strictEqual(json.data.name, 'World', 'Should use default name');
-        strictEqual(json.data.count, 1, 'Should use default count');
-        strictEqual(json.data.verbose, false, 'Should use default verbose');
+        ok(json.formatted, 'Should have formatted field');
+        strictEqual(json.formatted, '123,456');
     });
 
-    test('accepts custom parameters', async () => {
+    test('validates required number field', async () => {
         const response = await app.inject({
             method: 'POST',
             url: '/hello',
             payload: {
-                name: 'TestUser',
-                count: 5,
-                verbose: false,
+                locale: 'en-US',
             },
         });
 
-        strictEqual(response.statusCode, 200);
-
-        const json = response.json();
-        strictEqual(json.data.name, 'TestUser');
-        strictEqual(json.data.count, 5);
-        strictEqual(json.data.verbose, false);
+        strictEqual(response.statusCode, 400, 'Should return 400 for missing number');
     });
 
-    test('includes user data when verbose is true', async () => {
+    test('validates required locale field', async () => {
         const response = await app.inject({
             method: 'POST',
             url: '/hello',
             payload: {
-                name: 'Verbose',
-                count: 1,
-                verbose: true,
+                number: 12345,
             },
         });
 
-        strictEqual(response.statusCode, 200);
-
-        const json = response.json();
-        strictEqual(json.data.verbose, true);
-        ok(json.data.user, 'Should include user object');
-        strictEqual(json.data.user.name, 'John Doe');
-        strictEqual(json.data.user.email, 'john@example.com');
+        strictEqual(response.statusCode, 400, 'Should return 400 for missing locale');
     });
 
-    test('validates minimum string length', async () => {
+    test('validates locale format', async () => {
         const response = await app.inject({
             method: 'POST',
             url: '/hello',
             payload: {
-                name: 'AB', // Only 2 characters, min is 3
-                count: 1,
+                number: 12345,
+                locale: 'invalid_format',
             },
         });
 
-        strictEqual(response.statusCode, 400, 'Should return 400 for validation error');
+        strictEqual(response.statusCode, 400, 'Should return 400 for invalid locale format');
+    });
 
+    test('rejects unsupported locale with available locales list', async () => {
+        const response = await app.inject({
+            method: 'POST',
+            url: '/hello',
+            payload: {
+                number: 12345,
+                locale: 'xx-XX',
+            },
+        });
+
+        strictEqual(response.statusCode, 400, 'Should return 400 for unsupported locale');
         const json = response.json();
         ok(json.message, 'Should include error message');
-        // Our validator returns errors like "2 >= 3" for length violations
-        ok(json.message.includes('>=') || json.message.includes('min'), 'Error should mention length requirement');
-    });
-
-    test('validates positive count', async () => {
-        const response = await app.inject({
-            method: 'POST',
-            url: '/hello',
-            payload: {
-                name: 'Test',
-                count: 0, // Must be minimum 1
-            },
-        });
-
-        strictEqual(response.statusCode, 400, 'Should return 400 for validation error');
-
-        const json = response.json();
-        ok(json.message, 'Should include error message');
-    });
-
-    test('validates email format when provided', async () => {
-        // Note: This tests the User schema structure, though not directly via endpoint
-        // The endpoint validates TestRequestSchema, but we can verify the schema exists
-        ok(true, 'User schema with email validation is defined in routes.ts');
+        ok(json.availableLocales, 'Should include available locales list');
     });
 });
 

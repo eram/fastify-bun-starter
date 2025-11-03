@@ -5,6 +5,7 @@ import { replacerFn, reviverFn } from '../util/immutable';
 import { fromHumanBytes } from '../util/text';
 import { registerHealthRoute } from './health';
 import { registerHelloRoute } from './hello';
+import { registerMCPRoute } from './mcp';
 import { registerSecurityPlugins } from './security';
 import { registerSwagger } from './swagger';
 
@@ -61,6 +62,7 @@ export async function registerAll(app: ReturnType<typeof createServer>) {
     // Register all routes
     await registerHealthRoute(app);
     await registerHelloRoute(app);
+    await registerMCPRoute(app);
 
     console.log('✓ Fastify app initialized');
 }

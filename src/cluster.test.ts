@@ -9,7 +9,6 @@ function runCluster(workers: number, timeout = 5000): Promise<{ stdout: string; 
     return new Promise((resolve) => {
         const proc = spawn('bun', ['run', 'src/cluster.ts'], {
             cwd: process.cwd(),
-            // biome-ignore lint/style/useNamingConvention: WORKERS is an environment variable
             env: { ...process.env, WORKERS: workers.toString() },
         });
 
