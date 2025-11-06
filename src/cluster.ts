@@ -12,7 +12,7 @@ let clusterManager: ClusterManager | undefined;
  * Get the current cluster manager instance
  * @returns The cluster manager instance, or undefined if not initialized
  */
-export function getClusterManager(): ClusterManager | undefined {
+export function getCluster(): ClusterManager | undefined {
     return clusterManager;
 }
 
@@ -20,16 +20,8 @@ export function getClusterManager(): ClusterManager | undefined {
  * Get the current number of active workers
  * @returns The number of active workers, or undefined if not in cluster mode
  */
-export function getWorkerCount(): number | undefined {
+export function getActiveWorkers(): number | undefined {
     return clusterManager?.getStats().activeWorkers;
-}
-
-/**
- * Get cluster statistics
- * @returns Cluster statistics, or undefined if not in cluster mode
- */
-export function getClusterStats() {
-    return clusterManager?.getStats();
 }
 
 /**
@@ -48,10 +40,7 @@ async function startWorker() {
  */
 /* istanbul ignore next */
 async function startCluster() {
-    // Print environment variables in development mode only
-    if (cluster.isPrimary && process.env.NODE_ENV === 'development') {
-        env.print();
-    }
+    env.print();
 
     // If this is a worker process, just start the server
     if (cluster.isWorker) {

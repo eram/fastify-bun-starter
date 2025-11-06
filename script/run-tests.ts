@@ -107,6 +107,7 @@ async function runTests(): Promise<number> {
         const proc = spawn('bun', ['test', ...testArgs], {
             stdio: ['inherit', 'pipe', 'pipe'],
             shell: true,
+            env: { ...process.env, LOG_FORMAT: 'line' },
         });
 
         // Process stdout

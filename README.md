@@ -127,14 +127,19 @@ docker run -p 3000:3000 my-app
 # Run application with hot-reload
 bun run dev
 
-# Run server
-bun run server
+# Run HTTP server
+npm run start
+# or: bun src/app.ts
 
-# Run CLI test command
-bun run src/cli.ts test "World" 1 --verbose
+# Run with hot reload
+npm run dev
 
-# Run cluster mode
-bun run cluster
+# Run cluster mode (production)
+npm run cluster
+
+# MCP management CLI
+npm run mcp list
+npm run mcp add my-server --transport sse --url https://example.com/sse
 
 # Run all tests (unit + integration)
 bun test

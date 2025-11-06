@@ -24,6 +24,11 @@ export type Union<T> = {
     [K in T extends infer P ? keyof P : never]: T extends infer P ? (K extends keyof P ? P[K] : never) : never;
 };
 
+/** Typescript helper to get a proper type */
+export function is<T>(val: unknown): val is T {
+    return val !== undefined;
+}
+
 /** Converts SharedArrayBuffer/ArrayBuffer to string for JSON.parse */
 export function toJsonString(input: string | SharedArrayBuffer | ArrayBuffer): string {
     if (input instanceof SharedArrayBuffer || input instanceof ArrayBuffer) {

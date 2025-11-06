@@ -1,11 +1,24 @@
 // !!! DO NOT IMPORT env or ExtendedError !!!
 
 import cluster from 'node:cluster';
-import inspector from 'node:inspector';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { format, styleText } from 'node:util';
+import { isDebuggerAttached } from './debugger';
 import { replacerFn } from './immutable';
+
+// Read package.json name once at module load time
+let packageName: string | undefined;
+try {
+    const pkgPath = path.join(process.cwd(), 'package.json');
+    const pkgContent = readFileSync(pkgPath, 'utf8');
+    const pkg = JSON.parse(pkgContent);
+    packageName = pkg.name;
+} catch {
+    // Fallback if package.json cannot be read
+    packageName = undefined;
+}
 
 /**
  * Logger is a replacement for console logger:
@@ -21,7 +34,7 @@ import { replacerFn } from './immutable';
  * LOG_NAME: The name of the logger, defaults to process info. Default: process.title.
  * LOG_FORMAT: The log output format, can be "json", "line". Default: json unless a debugger is attached.
  * LOG_ADD_TIME: If "true", adds a timestamp to each log message. Default: false.
- * APP_NAME: The application name to include in JSON logs. Default: process.execPath
+ * APP_NAME: The application name to include in JSON logs. Default: package.json name or process.execPath
  */
 
 // RFC5424: syslog levels
@@ -73,7 +86,7 @@ export class LoggerConf {
             ? jsonFn
             : lineFn,
         chalkFn = styleText,
-        app = process.env.APP_NAME ?? path.basename(process.execPath),
+        app = process.env.APP_NAME ?? packageName ?? path.basename(process.execPath),
     }: LoggerOptions = {}) {
         this.scope = scope;
         this.level = LoggerConf._normalizeLevel(level);
@@ -124,22 +137,8 @@ export interface Logger extends Readonly<Transport>, Readonly<Console> {
     scoped(name: string, level?: LogLevel): Logger;
 }
 
-/**
- * Checks if the Node.js process is running under a connected debugger.
- * This is useful to determine if we should log more detailed information.
- * @returns {boolean} True if the process is running under a debugger.
- */
-let _attached: boolean | undefined;
-export function isDebuggerAttached() {
-    return (
-        _attached ??
-        (_attached =
-            typeof process === 'object' &&
-            typeof process.debugPort === 'number' &&
-            process.debugPort !== 0 &&
-            typeof inspector.url() === 'string')
-    );
-}
+// Re-export isDebuggerAttached from debugger module
+export { isDebuggerAttached };
 
 // Formatter for json output
 function jsonFn(this: LoggerConf, lvl: LogLevel, fn: LogFn, _chalk: Chalk, ...params: unknown[]) {

@@ -44,7 +44,7 @@ function parseSSE(text: string): unknown {
 describe.skip('MCP HTTP-SSE transport (CI)', () => {
     test('can list tools via SSE', async () => {
         const port = 13590;
-        const serverProcess = spawn(`bun run src/cli.ts server`, {
+        const serverProcess = spawn(`bun src/app.ts`, {
             shell: true,
             env: { ...process.env, PORT: String(port) },
             stdio: ['ignore', 'pipe', 'pipe'],

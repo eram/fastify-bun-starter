@@ -84,17 +84,11 @@ describe('HTTP Security Middleware', () => {
         // Check that MCP headers are allowed
         const allowedHeaders = response.headers.get('access-control-allow-headers');
         ok(allowedHeaders, 'Should have Access-Control-Allow-Headers');
-        ok(
-            allowedHeaders?.toLowerCase().includes('mcp-session-id'),
-            'Should allow mcp-session-id header for MCP clients'
-        );
+        ok(allowedHeaders?.toLowerCase().includes('mcp-session-id'), 'Should allow mcp-session-id header for MCP clients');
 
         const exposedHeaders = response.headers.get('access-control-expose-headers');
         ok(exposedHeaders, 'Should have Access-Control-Expose-Headers');
-        ok(
-            exposedHeaders?.includes('Mcp-Session-Id'),
-            'Should expose Mcp-Session-Id header for MCP clients to read'
-        );
+        ok(exposedHeaders?.includes('Mcp-Session-Id'), 'Should expose Mcp-Session-Id header for MCP clients to read');
     });
 
     test('should apply rate limiting', async () => {

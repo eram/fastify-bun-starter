@@ -1,12 +1,11 @@
 import { exec } from 'node:child_process';
-import { constants } from 'node:os';
 import readline from 'node:readline';
 import { PassThrough, type Transform } from 'node:stream';
 import { styleText } from 'node:util';
+import { errno, getErrorName } from './error';
 
-// Replaced CustomError import with local errno and error utilities
-export const errno = constants.errno;
-export const getErrorName = (e: number) => Object.keys(errno).find((key) => Object(errno)[key] === e) || e.toString();
+// Re-export for backwards compatibility
+export { errno, getErrorName };
 
 // Color shorthand functions for styled text (tagged template literals)
 type ForegroundColors = Parameters<typeof styleText>[0];

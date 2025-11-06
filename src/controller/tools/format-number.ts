@@ -1,63 +1,28 @@
 /**
- * MCP Tools registration
- * Registers hello and health endpoints as MCP tools
+ * Number formatting tool
+ * Formats numbers according to locale (IETF BCP 47 format)
  */
 
-import type { MCPServer } from './server';
-import type { ToolResult } from './types';
+import type { MCPServer, ToolResult } from '../../lib/mcp';
 
-/**
- * Register health check tool
- */
-export function registerHealthTool(server: MCPServer): void {
-    server.registerTool(
-        {
-            name: 'health',
-            description: 'Check server health status',
-            inputSchema: {
-                type: 'object',
-                properties: {},
-                required: [],
-            },
-        },
-        async (): Promise<ToolResult> => {
-            const result = {
-                status: 'ok',
-                timestamp: new Date().toISOString(),
-            };
+export function registerFormatNumberTool(server: MCPServer): void {
+    const properties = new Map<string, unknown>();
+    properties.set('number', {
+        type: 'number',
+        description: 'Number to format (1-15 digits, positive or negative)',
+    });
+    properties.set('locale', {
+        type: 'string',
+        description: 'Locale in IETF BCP 47 format (e.g., en-US, de-DE, fr-FR)',
+    });
 
-            return {
-                content: [
-                    {
-                        type: 'text',
-                        text: JSON.stringify(result, null, 2),
-                    },
-                ],
-            };
-        },
-    );
-}
-
-/**
- * Register number formatting tool (hello endpoint)
- */
-export function registerNumberFormatTool(server: MCPServer): void {
     server.registerTool(
         {
             name: 'format_number',
             description: 'Format a number according to a specific locale (IETF BCP 47 format like en-US, de-DE)',
             inputSchema: {
                 type: 'object',
-                properties: {
-                    number: {
-                        type: 'number',
-                        description: 'Number to format (1-15 digits, positive or negative)',
-                    },
-                    locale: {
-                        type: 'string',
-                        description: 'Locale in IETF BCP 47 format (e.g., en-US, de-DE, fr-FR)',
-                    },
-                },
+                properties,
                 required: ['number', 'locale'],
             },
         },
@@ -81,8 +46,8 @@ export function registerNumberFormatTool(server: MCPServer): void {
             }
 
             // Check number has max 15 digits
-            const absNum = Math.abs(number);
-            const digits = absNum === 0 ? 1 : Math.floor(Math.log10(absNum)) + 1;
+            const abs = Math.abs(number);
+            const digits = abs === 0 ? 1 : Math.floor(Math.log10(abs)) + 1;
             if (digits > 15) {
                 return {
                     content: [{ type: 'text', text: 'Error: Number must have at most 15 digits' }],
@@ -91,8 +56,8 @@ export function registerNumberFormatTool(server: MCPServer): void {
             }
 
             // Check locale format (IETF BCP 47: language-COUNTRY)
-            const localePattern = /^[a-z]{2,3}(-[A-Z]{2})?$/;
-            if (!localePattern.test(locale)) {
+            const pattern = /^[a-z]{2,3}(-[A-Z]{2})?$/;
+            if (!pattern.test(locale)) {
                 return {
                     content: [
                         {
@@ -106,8 +71,8 @@ export function registerNumberFormatTool(server: MCPServer): void {
 
             // Try to format the number
             try {
-                const formatter = new Intl.NumberFormat(locale);
-                const formatted = formatter.format(number);
+                const loc = new Intl.NumberFormat(locale);
+                const formatted = loc.format(number);
 
                 const result = {
                     formatted,
@@ -122,6 +87,7 @@ export function registerNumberFormatTool(server: MCPServer): void {
                             text: JSON.stringify(result, null, 2),
                         },
                     ],
+                    isError: false,
                 };
             } catch (error) {
                 return {
@@ -136,12 +102,4 @@ export function registerNumberFormatTool(server: MCPServer): void {
             }
         },
     );
-}
-
-/**
- * Register all tools
- */
-export function registerAllTools(server: MCPServer): void {
-    registerHealthTool(server);
-    registerNumberFormatTool(server);
 }

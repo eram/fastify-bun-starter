@@ -7,7 +7,7 @@
  * @module jsonSchema
  */
 
-import type { Schema, ValidatorDef, ValueValidator } from './validator';
+import type { Schema, Validator, ValidatorDef } from './validator';
 import * as v from './validator';
 
 // ============================================================================
@@ -212,7 +212,7 @@ function parseSchema(schema: Schema, refs: Refs): JsonSchema {
 /**
  * Parse a single validator - converts ValidatorDef to JsonSchema by omitting metadata
  */
-function parseValidator(validator: ValueValidator, refs: Refs): JsonSchema {
+function parseValidator(validator: Validator, refs: Refs): JsonSchema {
     // Use def() method which returns ValidatorDef
     const def = validator.defs(refs.options.additionalProperties);
 
@@ -315,7 +315,7 @@ export type FromJsonSchemaOptions = Partial<DefFromJsonSchemaOptions>;
  * // Returns: { name: string().min(1), age: number().int().min(0).optional() }
  * ```
  */
-export function fromJsonSchema(jsonSchema: JsonSchema | boolean, options?: FromJsonSchemaOptions): ValueValidator {
+export function fromJsonSchema(jsonSchema: JsonSchema | boolean, options?: FromJsonSchemaOptions): Validator {
     const opts = { ...new DefFromJsonSchemaOptions(), ...options };
 
     // Validate schema version if strictVersion is enabled
@@ -352,7 +352,7 @@ export function fromJsonSchema(jsonSchema: JsonSchema | boolean, options?: FromJ
 /**
  * Parse JSON Schema object and dispatch to appropriate parser
  */
-function parseJsonSchema(schema: JsonSchema, opts: Required<FromJsonSchemaOptions>): ValueValidator {
+function parseJsonSchema(schema: JsonSchema, opts: Required<FromJsonSchemaOptions>): Validator {
     // Handle schema combinators first
     if (schema.anyOf) {
         return parseAnyOf(schema.anyOf, opts);
@@ -470,7 +470,7 @@ function parseObjectSchema(schema: JsonSchema, opts: Required<FromJsonSchemaOpti
 /**
  * Parse array schema
  */
-function parseArraySchema(schema: JsonSchema, opts: Required<FromJsonSchemaOptions>): ValueValidator {
+function parseArraySchema(schema: JsonSchema, opts: Required<FromJsonSchemaOptions>): Validator {
     let validator = v.array();
 
     // Handle items schema
@@ -497,7 +497,7 @@ function parseArraySchema(schema: JsonSchema, opts: Required<FromJsonSchemaOptio
 /**
  * Parse string schema with strict type checking (no coercion)
  */
-function parseStringSchema(schema: JsonSchema): ValueValidator {
+function parseStringSchema(schema: JsonSchema): Validator {
     // Create a minimal string validator without coercion
     const validator = v.string();
 
@@ -570,7 +570,7 @@ function parseStringSchema(schema: JsonSchema): ValueValidator {
 /**
  * Parse number/integer schema with strict type checking (no coercion)
  */
-function parseNumberSchema(schema: JsonSchema): ValueValidator {
+function parseNumberSchema(schema: JsonSchema): Validator {
     let validator = v.number();
 
     // Clear existing validators and add strict type check first
@@ -638,7 +638,7 @@ function parseNumberSchema(schema: JsonSchema): ValueValidator {
 /**
  * Parse enum (creates union of literals)
  */
-function parseEnum(values: unknown[]): ValueValidator {
+function parseEnum(values: unknown[]): Validator {
     if (values.length === 0) {
         throw new Error('Empty enum is not supported');
     }
@@ -676,7 +676,7 @@ function parseEnum(values: unknown[]): ValueValidator {
 /**
  * Parse anyOf (union)
  */
-function parseAnyOf(schemas: JsonSchema[], opts: Required<FromJsonSchemaOptions>): ValueValidator {
+function parseAnyOf(schemas: JsonSchema[], opts: Required<FromJsonSchemaOptions>): Validator {
     if (schemas.length === 0) {
         throw new Error('Empty anyOf is not supported');
     }
@@ -700,7 +700,7 @@ function parseAnyOf(schemas: JsonSchema[], opts: Required<FromJsonSchemaOptions>
 /**
  * Parse oneOf (exclusive union - maps to anyOf/union in our validator)
  */
-function parseOneOf(schemas: JsonSchema[], opts: Required<FromJsonSchemaOptions>): ValueValidator {
+function parseOneOf(schemas: JsonSchema[], opts: Required<FromJsonSchemaOptions>): Validator {
     // Note: JSON Schema oneOf is exclusive (exactly one must match)
     // Our validator union is not exclusive (any one can match)
     // For simplicity, treat as union - strict oneOf validation would require custom logic
@@ -710,7 +710,7 @@ function parseOneOf(schemas: JsonSchema[], opts: Required<FromJsonSchemaOptions>
 /**
  * Parse allOf (intersection)
  */
-function parseAllOf(schemas: JsonSchema[], opts: Required<FromJsonSchemaOptions>): ValueValidator {
+function parseAllOf(schemas: JsonSchema[], opts: Required<FromJsonSchemaOptions>): Validator {
     if (schemas.length === 0) {
         return v.object({});
     }
@@ -735,7 +735,7 @@ function parseAllOf(schemas: JsonSchema[], opts: Required<FromJsonSchemaOptions>
     // If all are validators, try to merge object validators
     const allValidators = parsed.every((p) => isValidator(p));
     if (allValidators) {
-        const validators = parsed as ValueValidator[];
+        const validators = parsed as Validator[];
 
         // Try to merge object schemas
         const allObjects = validators.every((val) => {
@@ -743,10 +743,10 @@ function parseAllOf(schemas: JsonSchema[], opts: Required<FromJsonSchemaOptions>
         });
 
         if (allObjects) {
-            const merged: Record<string, ValueValidator> = {};
+            const merged: Record<string, Validator> = {};
             for (const validator of validators) {
                 // Object validators have a schema property
-                const schema = (validator as { schema: Record<string, ValueValidator> }).schema;
+                const schema = (validator as { schema: Record<string, Validator> }).schema;
                 Object.assign(merged, schema);
             }
             return v.object(merged);
@@ -763,22 +763,22 @@ function parseAllOf(schemas: JsonSchema[], opts: Required<FromJsonSchemaOptions>
 /**
  * Parse multiple types (type: ["string", "number"])
  */
-function parseMultipleTypes(types: string[], schema: JsonSchema, opts: Required<FromJsonSchemaOptions>): ValueValidator {
+function parseMultipleTypes(types: string[], schema: JsonSchema, opts: Required<FromJsonSchemaOptions>): Validator {
     const validators = types.map((type) => {
         const typeSchema = { ...schema, type };
-        return parseJsonSchema(typeSchema as JsonSchema, opts) as ValueValidator;
+        return parseJsonSchema(typeSchema as JsonSchema, opts) as Validator;
     });
 
     if (validators.length === 1) {
         return validators[0];
     }
 
-    return v.union(validators as [ValueValidator, ValueValidator, ...ValueValidator[]]);
+    return v.union(validators as [Validator, Validator, ...Validator[]]);
 }
 
 /**
  * Type guard to check if result is a ValueValidator
  */
-function isValidator(obj: unknown): obj is ValueValidator {
+function isValidator(obj: unknown): obj is Validator {
     return typeof obj === 'object' && obj !== null && 'valueOf' in obj && 'push' in obj;
 }

@@ -32,6 +32,7 @@ import {
     date,
     email,
     emoji,
+    enumeration,
     hash,
     hex,
     hostname,
@@ -51,26 +52,26 @@ import {
     nanoid,
     nullable,
     nullish,
-    nullValidator,
+    nullVal,
     number,
-    type ObjVal,
+    type ObjV,
     object,
     optional,
     parseSchema,
     record,
-    type StrVal,
+    type StrV,
     safeParse,
     set,
     strictObject,
     string,
-    type TypeVal,
+    type TypeV,
     ulid,
-    undefinedValidator,
+    undefinedVal,
     union,
     unknown,
     url,
     uuid,
-    voidValidator,
+    voidVal,
 } from './validator';
 
 // Zod-like API export for backwards compatibility
@@ -81,10 +82,10 @@ export const z = {
     boolean,
     bigint,
     date,
-    undefined: undefinedValidator,
-    null: nullValidator,
+    undefined: undefinedVal,
+    null: nullVal,
     nan,
-    void: voidValidator,
+    void: voidVal,
 
     // Complex types
     array,
@@ -97,6 +98,7 @@ export const z = {
 
     // Utility types
     literal,
+    enum: enumeration,
     nullable,
     nullish,
     optional,
@@ -140,9 +142,9 @@ export const z = {
 };
 
 export namespace z {
-    export type ZodType<T = unknown> = TypeVal<T>;
-    export type ZodObject = ObjVal;
-    export type ZodString = StrVal;
+    export type ZodType<T = unknown> = TypeV<T>;
+    export type ZodObject = ObjV;
+    export type ZodString = StrV;
     // biome-ignore lint/style/useNamingConvention: Zod compatibility
     export type infer<T> = Infer<T>;
 }

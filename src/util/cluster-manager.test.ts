@@ -710,5 +710,257 @@ describe('ClusterManager', () => {
                 ok(err.message.includes('primary process'));
             });
         });
+
+        test('should handle graceful shutdown of connected workers', async () => {
+            Object.defineProperty(cluster, 'isPrimary', {
+                get: () => true,
+                configurable: true,
+            });
+
+            const forkedWorkers: Worker[] = [];
+            let workerIdCounter = 0;
+            let exitHandler: ((worker: Worker, code: number | null, signal: string | null) => void) | undefined;
+
+            cluster.fork = (() => {
+                const worker = createMockWorker(++workerIdCounter, 10000 + workerIdCounter);
+                forkedWorkers.push(worker);
+                setImmediate(() => worker.emit('online'));
+                return worker;
+            }) as typeof cluster.fork;
+
+            cluster.on = ((event: string, handler: (...args: unknown[]) => void) => {
+                if (event === 'exit') {
+                    exitHandler = handler as (worker: Worker, code: number | null, signal: string | null) => void;
+                }
+                return cluster;
+            }) as typeof cluster.on;
+
+            const { createLogger } = await import('./logger');
+            const manager = new ClusterManager({
+                file: './worker.js',
+                workers: 2,
+                shutdownTimeout: 200,
+                logger: createLogger('TestCluster', 'ERROR'),
+            });
+
+            await manager.startPrimary();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            // Call shutdown and verify workers are disconnected
+            const shutdownPromise = manager.shutdown();
+
+            // Simulate workers exiting gracefully via the exit handler
+            setImmediate(() => {
+                if (exitHandler) {
+                    forkedWorkers.forEach((worker) => {
+                        exitHandler!(worker, 0, null);
+                    });
+                }
+            });
+
+            await shutdownPromise;
+
+            const stats = manager.getStats();
+            strictEqual(stats.isShuttingDown, true);
+        });
+
+        test('should force kill workers after timeout in shutdown', async () => {
+            Object.defineProperty(cluster, 'isPrimary', {
+                get: () => true,
+                configurable: true,
+            });
+
+            const forkedWorkers: Worker[] = [];
+            const killedWorkers: Worker[] = [];
+            let workerIdCounter = 0;
+
+            cluster.fork = (() => {
+                const worker = createMockWorker(++workerIdCounter, 10000 + workerIdCounter);
+                Object.assign(worker, {
+                    kill: (signal?: string) => {
+                        if (signal === 'SIGKILL') {
+                            killedWorkers.push(worker);
+                            // Simulate worker exit after SIGKILL
+                            setImmediate(() => worker.emit('exit', 1, 'SIGKILL'));
+                        }
+                    },
+                });
+                forkedWorkers.push(worker);
+                setImmediate(() => worker.emit('online'));
+                return worker;
+            }) as typeof cluster.fork;
+
+            cluster.on = (() => cluster) as typeof cluster.on;
+
+            const { createLogger } = await import('./logger');
+            const manager = new ClusterManager({
+                file: './worker.js',
+                workers: 1,
+                shutdownTimeout: 100, // Very short timeout to force SIGKILL
+                logger: createLogger('TestCluster', 'ERROR'),
+            });
+
+            await manager.startPrimary();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            // Call shutdown and wait for timeout
+            const _shutdownPromise = manager.shutdown();
+
+            // Don't emit exit - let it timeout and force SIGKILL
+            await new Promise((resolve) => setTimeout(resolve, 200));
+
+            ok(killedWorkers.length > 0, 'Should have force-killed workers after timeout');
+        });
+
+        test('should handle workers already disconnected during shutdown', async () => {
+            Object.defineProperty(cluster, 'isPrimary', {
+                get: () => true,
+                configurable: true,
+            });
+
+            const forkedWorkers: Worker[] = [];
+            let workerIdCounter = 0;
+            let exitHandler: ((worker: Worker, code: number | null, signal: string | null) => void) | undefined;
+
+            cluster.fork = (() => {
+                const worker = createMockWorker(++workerIdCounter, 10000 + workerIdCounter);
+                Object.assign(worker, {
+                    isConnected: () => false, // Already disconnected
+                });
+                forkedWorkers.push(worker);
+                setImmediate(() => worker.emit('online'));
+                return worker;
+            }) as typeof cluster.fork;
+
+            cluster.on = ((event: string, handler: (...args: unknown[]) => void) => {
+                if (event === 'exit') {
+                    exitHandler = handler as (worker: Worker, code: number | null, signal: string | null) => void;
+                }
+                return cluster;
+            }) as typeof cluster.on;
+
+            const { createLogger } = await import('./logger');
+            const manager = new ClusterManager({
+                file: './worker.js',
+                workers: 1,
+                shutdownTimeout: 200,
+                logger: createLogger('TestCluster', 'ERROR'),
+            });
+
+            await manager.startPrimary();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            // Shutdown should handle already-disconnected workers gracefully
+            const shutdownPromise = manager.shutdown();
+
+            // Simulate worker exit via the exit handler
+            setImmediate(() => {
+                if (exitHandler && forkedWorkers[0]) {
+                    exitHandler(forkedWorkers[0], 0, null);
+                }
+            });
+
+            await shutdownPromise;
+
+            ok(true, 'Should handle disconnected workers without error');
+        });
+    });
+
+    describe('Worker error handling', () => {
+        test('should handle worker error during startup', async () => {
+            Object.defineProperty(cluster, 'isPrimary', {
+                get: () => true,
+                configurable: true,
+            });
+
+            const forkedWorkers: Worker[] = [];
+            let errorEmitted = false;
+            let workerIdCounter = 0;
+
+            cluster.fork = (() => {
+                const worker = createMockWorker(++workerIdCounter, 10000 + workerIdCounter);
+                forkedWorkers.push(worker);
+                // Simulate error during startup
+                setImmediate(() => {
+                    worker.emit('error', new Error('Worker startup failed'));
+                    errorEmitted = true;
+                });
+                return worker;
+            }) as typeof cluster.fork;
+
+            cluster.on = (() => cluster) as typeof cluster.on;
+
+            const { createLogger } = await import('./logger');
+            const manager = new ClusterManager({
+                file: './worker.js',
+                workers: 1,
+                logger: createLogger('TestCluster', 'ERROR'),
+            });
+
+            await manager.startPrimary();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            ok(errorEmitted, 'Worker error event should have been emitted');
+            ok(forkedWorkers.length >= 1, 'Worker should have been forked despite error');
+        });
+    });
+
+    describe('Auto-start behavior', () => {
+        test('start() should call startPrimary when in primary mode', async () => {
+            Object.defineProperty(cluster, 'isPrimary', {
+                get: () => true,
+                configurable: true,
+            });
+            Object.defineProperty(cluster, 'isWorker', {
+                get: () => false,
+                configurable: true,
+            });
+
+            const forkedWorkers: Worker[] = [];
+            let workerIdCounter = 0;
+
+            cluster.fork = (() => {
+                const worker = createMockWorker(++workerIdCounter, 10000 + workerIdCounter);
+                forkedWorkers.push(worker);
+                setImmediate(() => worker.emit('online'));
+                return worker;
+            }) as typeof cluster.fork;
+
+            cluster.on = (() => cluster) as typeof cluster.on;
+
+            const { createLogger } = await import('./logger');
+            const manager = new ClusterManager({
+                file: './worker.js',
+                workers: 1,
+                logger: createLogger('TestCluster', 'ERROR'),
+            });
+
+            await manager.start();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            ok(forkedWorkers.length >= 1, 'Should have forked workers in primary mode');
+        });
+
+        test('start() should call startWorker when in worker mode', async () => {
+            Object.defineProperty(cluster, 'isPrimary', {
+                get: () => false,
+                configurable: true,
+            });
+            Object.defineProperty(cluster, 'isWorker', {
+                get: () => true,
+                configurable: true,
+            });
+
+            const { createLogger } = await import('./logger');
+            const manager = new ClusterManager({
+                file: './non-existent-worker.js',
+                logger: createLogger('TestCluster', 'ERROR'),
+            });
+
+            // startWorker will try to import the file, which will fail
+            await manager.start().catch((err) => {
+                ok(err, 'Should throw error when importing non-existent file');
+            });
+        });
     });
 });

@@ -1,9 +1,14 @@
-import { parseArgs } from 'node:util';
-import { app } from './app';
+/**
+ * CLI - Command-line interface for various tools
+ *
+ * This provides CLI commands for different operations.
+ * For running the HTTP server, use: bun src/app.ts
+ */
 
-// CLI mode using node:util.parseArgs
+import { parseArgs } from 'node:util';
+
 async function runCLI() {
-    const { values, positionals } = parseArgs({
+    const { positionals } = parseArgs({
         args: process.argv.slice(2),
         options: {
             help: {
@@ -13,39 +18,46 @@ async function runCLI() {
             },
         },
         allowPositionals: true,
+        strict: false, // Allow passing options to subcommands
     });
 
     const command = positionals[0];
 
-    if (values.help || !command) {
+    // Only show help if no command provided, or if help is requested without a command
+    if (!command) {
         console.log(`
+CLI - Command-line tools
+
 USAGE:
-  bun run src/cli.ts <command> [options]
+  bun src/cli.ts <command> [options]
 
 COMMANDS:
-  server                Start HTTP server (default port 3000)
-  mcp                   Start MCP server with stdio transport
+  mcp <subcommand>         Manage MCP server configurations
+                           (serve, add, remove, list, get, enable, disable, add-json)
 
 OPTIONS:
-  --help, -h            Show this help message
+  --help, -h              Show this help message
 
 EXAMPLES:
-  bun run src/cli.ts server
-  PORT=8080 bun run src/cli.ts server
-  bun run src/cli.ts mcp
+  bun src/cli.ts mcp list
+  bun src/cli.ts mcp add my-server --transport stdio --command "node server.js"
+  npm run mcp list
+
+For HTTP server:
+  npm run start           Start HTTP server
+  npm run dev             Start with hot reload
+  npm run cluster         Start in cluster mode
 `);
         return;
     }
 
-    if (command === 'server') {
-        const { startServer } = await import('./http/server');
-        await startServer(app);
-    } else if (command === 'mcp') {
-        const { startStdioServer } = await import('./lib/mcp/stdio');
-        await startStdioServer({
-            name: 'fastify-bun-starter-mcp',
-            version: '1.0.0',
-        });
+    if (command === 'mcp') {
+        // Pass remaining args to MCP CLI - pass ALL original args
+        // This is needed because parseArgs consumes options
+        const allArgs = process.argv.slice(2);
+        const mcpArgs = allArgs.slice(1); // Everything after 'mcp'
+        const { runMCPCLI } = await import('./cli/mcp');
+        await runMCPCLI(mcpArgs);
     } else {
         console.error(`Unknown command: ${command}`);
         console.error('Run with --help to see available commands');

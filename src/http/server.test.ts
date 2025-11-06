@@ -215,7 +215,7 @@ describe('startServer', () => {
         await registerAll(server1);
         await registerAll(server2);
 
-        const testPort = 13581; // Different port to avoid conflicts
+        const testPort = 13582; // Different port to avoid conflicts
         process.env.PORT = String(testPort);
         process.env.HOST = '127.0.0.1';
 

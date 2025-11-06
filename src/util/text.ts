@@ -262,9 +262,9 @@ export function parseLocaleNumber(str: string, _locale?: Intl.LocalesArgument): 
  */
 export function humanBytes(bytes: number, bin = true): string {
     const thresh = bin ? 1024 : 1000;
-    let absBytes = Math.abs(bytes);
+    let abs = Math.abs(bytes);
 
-    if (absBytes < thresh) {
+    if (abs < thresh) {
         return `${bytes} B`;
     }
     const units = bin
@@ -272,13 +272,13 @@ export function humanBytes(bytes: number, bin = true): string {
         : (['KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'] as const);
     let u = -1;
     do {
-        absBytes /= thresh;
+        abs /= thresh;
         ++u;
-    } while (absBytes >= thresh && u < units.length - 1);
+    } while (abs >= thresh && u < units.length - 1);
 
     // add precision two decimal places, only if needed, then add sign back
-    absBytes = absBytes % 100 ? Math.round(absBytes * 100) / 100 : absBytes;
-    return locale`${absBytes * (bytes < 0 ? -1 : 1)} ${units[u]}`;
+    abs = abs % 100 ? Math.round(abs * 100) / 100 : abs;
+    return locale`${abs * (bytes < 0 ? -1 : 1)} ${units[u]}`;
 }
 
 // Unit mappings with correct values - multi-letter units first, then 'b' last

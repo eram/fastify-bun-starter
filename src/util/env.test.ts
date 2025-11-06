@@ -1,7 +1,7 @@
 import { equal, ok } from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, test } from 'node:test';
+import { describe, mock, test } from 'node:test';
 
 import { Env } from './env';
 import { createLogger, LogLevel } from './logger';

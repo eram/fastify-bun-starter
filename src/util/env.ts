@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
 import * as worker from 'node:worker_threads';
 import type { Dict } from './immutable';
-import { createLogger, hookConsole, isDebuggerAttached, LogLevel } from './logger';
+import { createLogger, isDebuggerAttached, LogLevel } from './logger';
 
 type EnvValue = string | number | boolean;
 
@@ -72,14 +72,11 @@ export class Env {
     }
 
     /**
-     * Constructor: setup environment and hook console.
+     * Constructor: setup environment.
      */
     constructor() {
-        // validate node version
-        console.assert(Env.runtimeVer >= 24.0, 'NodeJS version 24+ required');
         Env.init();
         process.title = Env.appName;
-        hookConsole();
     }
 
     /**

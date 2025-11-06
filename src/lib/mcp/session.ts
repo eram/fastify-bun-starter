@@ -98,6 +98,19 @@ export class SessionStore {
     }
 
     /**
+     * Send notification to all sessions
+     * Useful for broadcasting config changes
+     */
+    async notifyAllSessions(notificationFn: (server: MCPServer) => Promise<void>): Promise<void> {
+        const promises = Array.from(this._sessions.values()).map((session) =>
+            notificationFn(session.server).catch((err) => {
+                console.error(`Failed to send notification to session ${session.sessionId}:`, err);
+            }),
+        );
+        await Promise.all(promises);
+    }
+
+    /**
      * Generate a unique session ID
      */
     private _generateSessionId(): string {

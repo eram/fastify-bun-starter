@@ -52,23 +52,15 @@
  *   address: object(addressSchema)
  * };
  * ```
-
  */
 
-// Validator error class
-class ValidatorError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = 'ValidatorError';
-    }
-}
-
-const verror = (str: string) => new ValidatorError(str);
+import { ErrorEx } from '../../util';
 
 // JSON Schema primitive types - defined locally to avoid circular dependency
 export type PrimitiveType = 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array' | 'null';
 
-// ValidatorDef contains only properties validators actually use
+// ValidatorDef contains only JSON Schema properties actually used
+// in this file. Additional props found in schema.ts
 export interface ValidatorDef {
     // Validator-specific metadata
     description?: string;
@@ -103,81 +95,83 @@ export interface ValidatorDef {
     additionalProperties?: boolean | ValidatorDef;
 }
 
-export interface ValueValidator<T = unknown> {
-    parse(value: unknown): T | undefined;
-    push(validator: (arg: T) => T): number;
+export interface Validator<T = unknown> {
+    parse(value: unknown): T;
+    push(check: (arg: T) => T): number;
     clear(): void;
     isOptional?: boolean; // Flag to indicate if validator is optional
     describe(description: string): this;
-    defs(additionalProperties?: boolean): ValidatorDef; // Get Json schema definition
-    optional(): this; // Make validator accept undefined
+    defs(props?: boolean): ValidatorDef; // Get Json schema definition
+    optional(): Validator<T | undefined>; // Make validator accept undefined
 }
 
+// Validator error class
+class ValidatorError extends ErrorEx {}
+const verror = (str: string) => new ValidatorError(str);
+
 // Abstract base class for all validators
-export abstract class TypeVal<T> implements ValueValidator<T> {
-    protected _validators: Array<(val: T) => T> = [];
+export abstract class TypeV<T> implements Validator<T> {
+    protected _checks: Array<(val: T) => T> = [];
     public isOptional = false; // Track if optional() was called (runtime flag for parse optimization)
-    protected _innerValidator?: ValueValidator; // Optional inner validator for composite types
+    protected _inner?: Validator; // Optional inner validator for composite types
     protected _defs: Partial<ValidatorDef> = {}; // Track constraint metadata for schema generation
 
     defs(): ValidatorDef {
         return { ...this._defs };
     }
 
-    get innerValidator(): ValueValidator | undefined {
-        return this._innerValidator;
-    }
-
-    parse(value: unknown): T | undefined {
+    parse(value: unknown): T {
         // Fast path for validators with no additional constraints
-        if (this._validators.length === 0) {
+        if (this._checks.length === 0) {
             return value as T;
         }
 
         // Fast path for single validator
-        if (this._validators.length === 1) {
-            const result = this._validators[0](value as T);
+        if (this._checks.length === 1) {
+            const result = this._checks[0](value as T);
             return result;
         }
 
         // Multiple validators - apply in sequence
-        let processedValue: T | undefined = value as T;
-        for (const validator of this._validators) {
-            processedValue = validator(processedValue as T);
-            if (processedValue === undefined) {
-                return undefined;
+        let processed: T = value as T;
+        for (let i = 0; i < this._checks.length; i++) {
+            processed = this._checks[i](processed);
+            // Short-circuit if optional validator returns undefined
+            // (this prevents further coercion of undefined values)
+            if (this.isOptional && processed === undefined && i === 0) {
+                return processed;
             }
         }
-        return processedValue;
+        return processed;
     }
 
-    push(validator: (val: T) => T): number {
-        return this._validators.push(validator);
+    push(check: (val: T) => T): number {
+        return this._checks.push(check);
     }
 
     clear() {
-        this._validators.length = 0;
+        this._checks.length = 0;
     }
 
-    optional(): this {
+    optional(): TypeV<T | undefined> {
         this.isOptional = true;
-        this._validators.splice(0, 0, (val: unknown) => {
+        this._checks.splice(0, 0, (val: unknown) => {
             if (val === undefined || val === null || val === '') {
                 return undefined as T;
             }
             return val as T;
         });
-        return this;
+        return this as TypeV<T | undefined>;
     }
 
-    default(defaultValue: T): this {
+    default(val: T): this {
         this.isOptional = true;
-        this._defs.default = defaultValue;
-        this._validators.splice(0, 0, (val: unknown) => {
-            if (val === undefined || val === null) {
-                return defaultValue;
+        this._defs.default = val;
+        this._checks.splice(0, 0, (v: unknown) => {
+            if (v === undefined || v === null) {
+                return val;
             }
-            return val as T;
+            return v as T;
         });
         return this;
     }
@@ -200,7 +194,7 @@ export abstract class TypeVal<T> implements ValueValidator<T> {
 // --- Number Validator ---
 //
 
-class NumVal extends TypeVal<number> {
+class NumV extends TypeV<number> {
     constructor() {
         super();
         this.push((val: unknown) => {
@@ -212,11 +206,11 @@ class NumVal extends TypeVal<number> {
                 return val;
             }
             // Coerce to number
-            const numValue = Number(val);
-            if (Number.isNaN(numValue)) {
+            const num = Number(val);
+            if (Number.isNaN(num)) {
                 throw verror(`Expected number, got ${typeof val}`);
             }
-            return numValue;
+            return num;
         });
     }
 
@@ -244,30 +238,30 @@ class NumVal extends TypeVal<number> {
         return this;
     }
 
-    min(minValue: number): this {
-        return this.gte(minValue);
+    min(min: number): this {
+        return this.gte(min);
     }
 
-    max(maxValue: number): this {
-        return this.lte(maxValue);
+    max(max: number): this {
+        return this.lte(max);
     }
 
-    gte(minValue: number): this {
-        this._defs.minimum = minValue;
+    gte(min: number): this {
+        this._defs.minimum = min;
         this.push((val: number) => {
-            if (val < minValue) {
-                throw verror(`${val} >= ${minValue}`);
+            if (val < min) {
+                throw verror(`${val} >= ${min}`);
             }
             return val;
         });
         return this;
     }
 
-    lte(maxValue: number): this {
-        this._defs.maximum = maxValue;
+    lte(max: number): this {
+        this._defs.maximum = max;
         this.push((val: number) => {
-            if (val > maxValue) {
-                throw verror(`${val} <= ${maxValue}`);
+            if (val > max) {
+                throw verror(`${val} <= ${max}`);
             }
             return val;
         });
@@ -356,7 +350,7 @@ class NumVal extends TypeVal<number> {
 // --- String Validator ---
 //
 
-export class StrVal extends TypeVal<string> {
+export class StrV extends TypeV<string> {
     constructor() {
         super();
         this.push((val: unknown) => {
@@ -374,38 +368,38 @@ export class StrVal extends TypeVal<string> {
     }
 
     // Validation methods
-    min(minLength: number): this {
-        this._defs.minLength = minLength;
+    min(min: number): this {
+        this._defs.minLength = min;
         this.push((val: string) => {
-            if (val.length < minLength) {
-                throw verror(`${val.length} >= ${minLength}`);
+            if (val.length < min) {
+                throw verror(`${val.length} >= ${min}`);
             }
             return val;
         });
         return this;
     }
 
-    max(maxLength: number): this {
-        this._defs.maxLength = maxLength;
+    max(max: number): this {
+        this._defs.maxLength = max;
         this.push((val: string) => {
-            if (val.length > maxLength) {
-                throw verror(`${val.length} <= ${maxLength}`);
+            if (val.length > max) {
+                throw verror(`${val.length} <= ${max}`);
             }
             return val;
         });
         return this;
     }
 
-    regex(pattern: RegExp, errMsg?: string): this {
+    regex(pattern: RegExp, msg?: string): this {
         this._defs.pattern = pattern.source;
         this.push((val: string) => {
             if (!pattern.test(val)) {
                 val = val.length > 20 ? `${val.slice(0, 17)}...` : val;
-                let patternString = pattern.toString();
-                patternString = patternString.length > 20 ? `${patternString.slice(0, 17)}...` : patternString;
-                errMsg ??= `"${val}" does not match ${patternString}`;
+                let str = pattern.toString();
+                str = str.length > 20 ? `${str.slice(0, 17)}...` : str;
+                msg ??= `"${val}" does not match ${str}`;
                 // Support template string interpolation in error message
-                const message = errMsg.replace(/\$\{val\}/g, val);
+                const message = msg.replace(/\$\{val\}/g, val);
                 throw verror(message);
             }
             return val;
@@ -667,22 +661,21 @@ export class StrVal extends TypeVal<string> {
             sha384: 96,
             sha512: 128,
         };
-        const expectedLength = lengths[algorithm];
+        const expected = lengths[algorithm];
         this.push((val: string) => {
             if (!/^[0-9a-fA-F]+$/.test(val)) {
                 throw verror(`"${val}" is not a valid hex string`);
             }
-            if (val.length !== expectedLength) {
-                throw verror(`${algorithm} hash must be ${expectedLength} characters, got ${val.length}`);
+            if (val.length !== expected) {
+                throw verror(`${algorithm} hash must be ${expected} characters, got ${val.length}`);
             }
             return val;
         });
         return this;
     }
 
-    // ISO format validators
+    // ISO 8601 date format: YYYY-MM-DD
     isoDate(): this {
-        // ISO 8601 date format: YYYY-MM-DD
         return this.regex(
             /^\d{4}-\d{2}-\d{2}$/,
             // biome-ignore lint/suspicious/noTemplateCurlyInString: implemented inside regex func
@@ -690,8 +683,8 @@ export class StrVal extends TypeVal<string> {
         );
     }
 
+    // ISO 8601 time format: HH:MM:SS or HH:MM:SS.sss
     isoTime(): this {
-        // ISO 8601 time format: HH:MM:SS or HH:MM:SS.sss
         return this.regex(
             /^\d{2}:\d{2}:\d{2}(\.\d{1,3})?$/,
             // biome-ignore lint/suspicious/noTemplateCurlyInString: implemented inside regex func
@@ -699,8 +692,8 @@ export class StrVal extends TypeVal<string> {
         );
     }
 
+    // ISO 8601 datetime format: YYYY-MM-DDTHH:MM:SS.sssZ or with timezone offset
     isoDatetime(): this {
-        // ISO 8601 datetime format: YYYY-MM-DDTHH:MM:SS.sssZ or with timezone offset
         return this.regex(
             /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})?$/,
             // biome-ignore lint/suspicious/noTemplateCurlyInString: implemented inside regex func
@@ -708,10 +701,10 @@ export class StrVal extends TypeVal<string> {
         );
     }
 
+    // ISO 8601 duration format: P[n]Y[n]M[n]DT[n]H[n]M[n]S or P[n]W
+    // Week format (P[n]W) cannot be combined with other date components
+    // Must have at least one component (Y, M, D, W, H, M, or S)
     isoDuration(): this {
-        // ISO 8601 duration format: P[n]Y[n]M[n]DT[n]H[n]M[n]S or P[n]W
-        // Week format (P[n]W) cannot be combined with other date components
-        // Must have at least one component (Y, M, D, W, H, M, or S)
         return this.regex(
             /^P(?:\d+W|(?=\d)(?:\d+Y)?(?:\d+M)?(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?|(?:\d+Y)?(?:\d+M)?(?:\d+D)?T(?=\d)(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)$/,
             // biome-ignore lint/suspicious/noTemplateCurlyInString: implemented inside regex func
@@ -724,7 +717,7 @@ export class StrVal extends TypeVal<string> {
 // --- Boolean Validator ---
 //
 
-class BoolVal extends TypeVal<boolean> {
+class BoolV extends TypeV<boolean> {
     constructor() {
         super();
         // Add type coercion as the first validator
@@ -743,7 +736,7 @@ class BoolVal extends TypeVal<boolean> {
 // --- BigInt Validator ---
 //
 
-class BigIntVal extends TypeVal<bigint> {
+class BigIntV extends TypeV<bigint> {
     constructor() {
         super();
         // Add type coercion as the first validator
@@ -801,12 +794,12 @@ class BigIntVal extends TypeVal<bigint> {
         return this;
     }
 
-    min(threshold: bigint): this {
-        return this.gte(threshold);
+    min(min: bigint): this {
+        return this.gte(min);
     }
 
-    max(threshold: bigint): this {
-        return this.lte(threshold);
+    max(max: bigint): this {
+        return this.lte(max);
     }
 
     positive(): this {
@@ -846,7 +839,7 @@ class BigIntVal extends TypeVal<bigint> {
 // Date can be ISO string or timestamp number.
 //
 
-class DateVal extends TypeVal<Date> {
+class DateV extends TypeV<Date> {
     constructor() {
         super();
         this.push((val: unknown) => {
@@ -902,115 +895,106 @@ class DateVal extends TypeVal<Date> {
 // --- Literal Validator ---
 //
 
-class LiteralVal<T extends string | number | boolean | null | undefined> extends TypeVal<T> {
-    private _literalValue: T;
+class LiteralV<T extends string | number | boolean | null | undefined> extends TypeV<T> {
+    private _literal: T;
 
-    constructor(literalValue: T) {
+    constructor(literal: T) {
         super();
-        this._literalValue = literalValue;
+        this._literal = literal;
+
+        // Add literal validation logic to checks
+        this.push((val: unknown) => {
+            if (val !== this._literal) {
+                const format = (v: unknown) =>
+                    v === null ? 'null' : v === undefined ? 'undefined' : typeof v === 'string' ? `"${v}"` : String(v);
+                throw verror(`Expected literal ${format(this._literal)}, got ${format(val)}`);
+            }
+            return this._literal;
+        });
     }
 
     override defs(): ValidatorDef {
-        const value = this._literalValue;
+        const value = this._literal;
         const type = typeof value;
+        let rc: ValidatorDef = { ...super.defs(), value };
 
-        if (value === null) {
-            return { ...super.defs(), type: 'null', value };
-        }
-        if (value === undefined) {
-            return { ...super.defs(), value };
-        }
-        if (type === 'string') {
-            return { ...super.defs(), type: 'string', const: value, value };
-        }
-        if (type === 'number') {
-            return { ...super.defs(), type: 'number', const: value, value };
-        }
-        if (type === 'boolean') {
-            return { ...super.defs(), type: 'boolean', const: value, value };
-        }
-        if (type === 'bigint') {
-            return { ...super.defs(), type: 'integer', const: Number(value), value };
-        }
-
-        return { ...super.defs(), const: value, value };
-    }
-
-    override parse(value: unknown): T {
-        if (value !== this._literalValue) {
-            const expectedStr =
-                this._literalValue === null
-                    ? 'null'
-                    : this._literalValue === undefined
-                      ? 'undefined'
-                      : typeof this._literalValue === 'string'
-                        ? `"${this._literalValue}"`
-                        : String(this._literalValue);
-            const gotStr =
-                value === null
-                    ? 'null'
-                    : value === undefined
-                      ? 'undefined'
-                      : typeof value === 'string'
-                        ? `"${value}"`
-                        : String(value);
-            throw verror(`Expected literal ${expectedStr}, got ${gotStr}`);
-        }
-        return this._literalValue;
+        do {
+            if (type === 'string') {
+                rc.type = 'string';
+                rc.const = value;
+                break;
+            }
+            if (type === 'number') {
+                rc.type = 'number';
+                rc.const = value;
+                break;
+            }
+            if (type === 'boolean') {
+                rc.type = 'boolean';
+                rc.const = value;
+                break;
+            }
+            if (type === 'bigint') {
+                rc = { ...super.defs(), type: 'integer', const: Number(value), value };
+                rc.type = 'integer';
+                rc.const = Number(value);
+                break;
+            }
+            if (value === null) {
+                rc.type = 'null';
+                break;
+            }
+            if (value === undefined) {
+                break;
+            }
+            rc.const = value;
+        } while (0);
+        return rc;
     }
 }
 
 //
 // --- Null/Unknown/Undefined Validators ---
 //
-class UnknownVal extends TypeVal<unknown> {
+class UnknownV extends TypeV<unknown> {
     constructor() {
         super();
         this.push((val: unknown) => val);
     }
 }
 
-class UndefinedVal extends LiteralVal<undefined> {
+class UndefinedV extends LiteralV<undefined> {
     constructor() {
         super(undefined);
     }
 }
 
-//
-// --- Null Validator ---
-//
+class VoidV extends LiteralV<undefined> {
+    constructor() {
+        super(undefined);
+    }
+}
 
-class NullVal extends LiteralVal<null> {
+class NullV extends LiteralV<null> {
     constructor() {
         super(null);
     }
 }
 
-//
-// --- NaN Validator ---
-// NaN is special because NaN !== NaN, so we need custom logic
-//
-
-class NanVal extends TypeVal<number> {
-    override defs(): ValidatorDef {
-        return { ...super.defs(), not: {} };
-    }
-
-    override parse(value: unknown): number | undefined {
-        if (!Number.isNaN(value)) {
-            throw verror(`Expected NaN, got ${value}`);
-        }
-        return value as number;
-    }
-}
-
-//
-// --- Void Validator ---
-//
-
-class VoidVal extends LiteralVal<undefined> {
+class NanV extends TypeV<number> {
     constructor() {
-        super(undefined);
+        super();
+        // NaN is special because NaN !== NaN, so we need custom logic
+        this.push((val: unknown) => {
+            if (!Number.isNaN(val)) {
+                throw verror(`Expected NaN, got ${val}`);
+            }
+            return val as number;
+        });
+    }
+
+    override defs(): ValidatorDef {
+        return { ...super.defs(), not: {}, description: 'Value must be NaN (not representable in JSON Schema)' };
     }
 }
 
@@ -1018,20 +1002,28 @@ class VoidVal extends LiteralVal<undefined> {
 // --- Nullable Wrapper ---
 //
 
-class NullableVal<T> extends TypeVal<T | null> {
-    constructor(innerValidator: ValueValidator<T>) {
+class NullableV<T> extends TypeV<T | null> {
+    constructor(inner: Validator<T>) {
         super();
-        this._innerValidator = innerValidator;
+        this._inner = inner;
+
+        // Add nullable validation logic to checks
+        this.push((value: unknown) => {
+            if (value === null) {
+                return null;
+            }
+            return this._inner!.parse(value) as T;
+        });
     }
 
-    override defs(additionalProperties?: boolean): ValidatorDef {
+    override defs(props?: boolean): ValidatorDef {
         const baseDef = super.defs();
-        const innerDef = this._innerValidator!.defs(additionalProperties);
+        const innerDef = this._inner!.defs(props);
 
         // If inner schema has additional properties (like items for arrays), use anyOf
-        const hasComplexSchema = innerDef.items || innerDef.properties || innerDef.enum;
+        const isComposite = innerDef.items || innerDef.properties || innerDef.enum;
 
-        if (hasComplexSchema) {
+        if (isComposite) {
             // Don't include 'type' from baseDef when using anyOf (JSON Schema constraint)
             const result = { ...baseDef, anyOf: [innerDef, { type: 'null' as const }] };
             delete result.type;
@@ -1045,7 +1037,7 @@ class NullableVal<T> extends TypeVal<T | null> {
                 return {
                     ...baseDef,
                     ...innerDef,
-                    type: [...types, 'null'] as PrimitiveType[],
+                    type: [...types, 'null'],
                 };
             }
         }
@@ -1054,13 +1046,6 @@ class NullableVal<T> extends TypeVal<T | null> {
         const result = { ...baseDef, anyOf: [innerDef, { type: 'null' as const }] };
         delete result.type;
         return result;
-    }
-
-    override parse(value: unknown): T | null | undefined {
-        if (value === null) {
-            return null;
-        }
-        return this._innerValidator!.parse(value) as T | null;
     }
 }
 
@@ -1068,21 +1053,30 @@ class NullableVal<T> extends TypeVal<T | null> {
 // --- Nullish Wrapper ---
 //
 
-class NullishVal<T> extends TypeVal<T | null | undefined> {
-    constructor(innerValidator: ValueValidator<T>) {
+class NullishV<T> extends TypeV<T | null | undefined> {
+    constructor(inner: Validator<T>) {
         super();
-        this._innerValidator = innerValidator;
+        this._inner = inner;
+        this.isOptional = true;
+
+        // Add nullish validation logic to checks
+        this.push((value: unknown) => {
+            if (value === null || value === undefined) {
+                return value as T | null | undefined;
+            }
+            return this._inner!.parse(value) as T | null | undefined;
+        });
     }
 
-    override defs(additionalProperties?: boolean): ValidatorDef {
+    override defs(props?: boolean): ValidatorDef {
         const baseDef = super.defs();
-        const innerDef = this._innerValidator!.defs(additionalProperties);
+        const innerDef = this._inner!.defs(props);
 
         // Nullish is null or undefined - in JSON Schema, we just treat it as nullable
         // If inner schema has additional properties (like items for arrays), use anyOf
-        const hasComplexSchema = innerDef.items || innerDef.properties || innerDef.enum;
+        const isComplex = innerDef.items || innerDef.properties || innerDef.enum;
 
-        if (hasComplexSchema) {
+        if (isComplex) {
             // Don't include 'type' from baseDef when using anyOf (JSON Schema constraint)
             const result = { ...baseDef, anyOf: [innerDef, { type: 'null' as const }] };
             delete result.type;
@@ -1096,7 +1090,7 @@ class NullishVal<T> extends TypeVal<T | null | undefined> {
                 return {
                     ...baseDef,
                     ...innerDef,
-                    type: [...types, 'null'] as PrimitiveType[],
+                    type: [...types, 'null'],
                 };
             }
         }
@@ -1106,73 +1100,115 @@ class NullishVal<T> extends TypeVal<T | null | undefined> {
         delete result.type;
         return result;
     }
-
-    override parse(value: unknown): T | null | undefined {
-        if (value === null || value === undefined) {
-            return value as T | null | undefined;
-        }
-        return this._innerValidator!.parse(value) as T | null | undefined;
-    }
 }
 
 //
 // --- Object Validator ---
 //
 
-export class ObjVal extends TypeVal<Record<string, unknown>> {
-    private _schema: Schema;
+// Helper type to extract keys of optional validators
+type OptionalKeys<S extends Schema> = {
+    [K in keyof S]: S[K] extends Validator<infer U> ? (undefined extends U ? K : never) : never;
+}[keyof S];
+
+// Helper type to extract keys of required validators
+type RequiredKeys<S extends Schema> = Exclude<keyof S, OptionalKeys<S>>;
+
+// Force TypeScript to evaluate and simplify the object type
+type SimplifyObject<T> = { [K in keyof T]: T[K] };
+
+// Object type with proper optional/required handling
+type InferObject<S extends Schema> = SimplifyObject<
+    {
+        [K in RequiredKeys<S>]: S[K] extends Validator<infer U> ? U : never;
+    } & {
+        [K in OptionalKeys<S>]?: S[K] extends Validator<infer U> ? U : never;
+    }
+>;
+
+export class ObjV<S extends Schema = Schema> extends TypeV<InferObject<S>> {
+    private _schema: S;
     protected _strict = false;
     protected _loose = false;
 
     constructor(schema: Schema = {}) {
         super();
-        this._schema = schema;
+        this._schema = schema as S;
         // Add type coercion and validation in one validator
+        type InferredType = InferObject<S>;
         this.push((val: unknown) => {
             if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
                 // If no schema, just return the object as-is
                 if (Object.keys(this._schema).length === 0) {
-                    return val as Record<string, unknown>;
+                    return val as InferredType;
                 }
 
-                const objRecord = val as Record<string, unknown>;
+                const rec = val as Record<string, unknown>;
 
                 // Strict mode: reject unknown keys
                 if (this._strict) {
                     const schemaKeys = Object.keys(this._schema);
-                    const inputKeys = Object.keys(objRecord);
+                    const inputKeys = Object.keys(rec);
                     const unknownKeys = inputKeys.filter((k) => !schemaKeys.includes(k));
                     if (unknownKeys.length > 0) {
                         throw verror(`Unknown keys in strict mode: ${unknownKeys.join(', ')}`);
                     }
                 }
 
-                // Validate nested fields directly here - parse will throw if validation fails
-                const result = parse(this._schema, val) as Record<string, unknown>;
+                // Validate nested fields directly here - each validator's parse will throw if validation fails
+                const result: Record<string, unknown> = {};
+                for (const key of Object.keys(this._schema)) {
+                    const fieldValidator = this._schema[key];
+                    const fieldValue = rec[key];
+
+                    // Check if field is optional
+                    const isOptional =
+                        fieldValidator &&
+                        typeof fieldValidator === 'object' &&
+                        'isOptional' in fieldValidator &&
+                        fieldValidator.isOptional;
+
+                    // If field is missing and required, throw error
+                    if (fieldValue === undefined && !isOptional) {
+                        throw verror(`Missing required field: ${key}`);
+                    }
+
+                    // If field is present, validate it (even if undefined but optional)
+                    if (fieldValue !== undefined) {
+                        // Call the validator's parse method
+                        if (fieldValidator && typeof fieldValidator === 'object' && 'parse' in fieldValidator) {
+                            result[key] = (fieldValidator as Validator<unknown>).parse(fieldValue);
+                        } else {
+                            result[key] = fieldValue;
+                        }
+                    }
+                    // If field is undefined and optional, don't include it in result (or set to undefined)
+                    // This matches the expected behavior where optional fields can be omitted
+                }
 
                 // Passthrough mode: include unknown keys
                 if (this._loose) {
                     const schemaKeys = Object.keys(this._schema);
-                    for (const key of Object.keys(objRecord)) {
+                    for (const key of Object.keys(rec)) {
                         if (!schemaKeys.includes(key)) {
-                            result[key] = objRecord[key];
+                            result[key] = rec[key];
                         }
                     }
                 }
 
-                return result;
+                return result as InferredType;
             }
             throw verror(`Expected object, got ${typeof val}`);
         });
     }
 
-    keyof(): UnionVal<string> {
+    keyof(): UnionV<string> {
         const keys = Object.keys(this._schema);
         if (keys.length === 0) {
             throw verror('Cannot get keyof from object with no schema');
         }
-        const literals = keys.map((k) => new LiteralVal(k));
-        return new UnionVal<string>(literals);
+        const literals = keys.map((k) => new LiteralV(k));
+        return new UnionV<string>(literals);
     }
 
     strict(): this {
@@ -1193,9 +1229,9 @@ export class ObjVal extends TypeVal<Record<string, unknown>> {
         return this;
     }
 
-    extend(additionalSchema: Schema): ObjVal {
+    extend(additionalSchema: Schema): ObjV {
         const merged = { ...this._schema, ...additionalSchema };
-        const extended = new ObjVal(merged);
+        const extended = new ObjV(merged);
 
         // Preserve strict/loose mode from current instance
         if (this._strict) {
@@ -1206,8 +1242,8 @@ export class ObjVal extends TypeVal<Record<string, unknown>> {
 
         // Preserve validators from original instance (e.g., minProperties, maxProperties, custom refinements)
         // Skip the first validator which is the object type coercion/validation
-        for (let i = 1; i < this._validators.length; i++) {
-            extended._validators.push(this._validators[i]);
+        for (let i = 1; i < this._checks.length; i++) {
+            extended._checks.push(this._checks[i] as never);
         }
 
         // Preserve metadata (defs)
@@ -1221,8 +1257,9 @@ export class ObjVal extends TypeVal<Record<string, unknown>> {
 
     minProperties(min: number): this {
         this._defs.minProperties = min;
-        this.push((val: Record<string, unknown>) => {
-            const propCount = Object.keys(val).length;
+        type InferredType = InferObject<S>;
+        this.push((val: InferredType) => {
+            const propCount = Object.keys(val as object).length;
             if (propCount < min) {
                 throw verror(`Object must have at least ${min} properties, got ${propCount}`);
             }
@@ -1233,8 +1270,9 @@ export class ObjVal extends TypeVal<Record<string, unknown>> {
 
     maxProperties(max: number): this {
         this._defs.maxProperties = max;
-        this.push((val: Record<string, unknown>) => {
-            const propCount = Object.keys(val).length;
+        type InferredType = InferObject<S>;
+        this.push((val: InferredType) => {
+            const propCount = Object.keys(val as object).length;
             if (propCount > max) {
                 throw verror(`Object must have at most ${max} properties, got ${propCount}`);
             }
@@ -1243,33 +1281,33 @@ export class ObjVal extends TypeVal<Record<string, unknown>> {
         return this;
     }
 
-    override defs(additionalProperties = false): ValidatorDef {
+    override defs(props = false): ValidatorDef {
         const baseDef = super.defs();
         const properties: Record<string, ValidatorDef> = {};
-        const requiredFields: string[] = [];
+        const required: string[] = [];
 
-        const objSchema = this._schema;
-        if (objSchema) {
-            for (const [key, fieldValidator] of Object.entries(objSchema)) {
-                properties[key] = fieldValidator.defs(additionalProperties);
+        const schema = this._schema;
+        if (schema) {
+            for (const [key, fieldValidator] of Object.entries(schema)) {
+                properties[key] = fieldValidator.defs(props);
                 // Mark required fields (those without isOptional flag)
                 if (!fieldValidator.isOptional) {
-                    requiredFields.push(key);
+                    required.push(key);
                 }
             }
         }
 
         // Set additionalPropsValue based on validator and context
         if (this._strict) {
-            additionalProperties = false;
+            props = false;
         }
 
         return {
             ...baseDef,
             type: 'object',
-            properties,
-            required: requiredFields,
-            additionalProperties: additionalProperties,
+            properties: properties,
+            required: required,
+            additionalProperties: props,
         };
     }
 
@@ -1282,37 +1320,31 @@ export class ObjVal extends TypeVal<Record<string, unknown>> {
 // --- Array Validator ---
 //
 
-class ArrVal extends TypeVal<Array<unknown>> {
-    private _itemValidator?: ValueValidator;
-
-    constructor(itemValidator?: ValueValidator) {
+class ArrV extends TypeV<Array<unknown>> {
+    constructor(item?: Validator) {
         super();
-        this._itemValidator = itemValidator;
+        this._inner = item;
         // Add type coercion as the first validator
         this.push((val: unknown) => {
             if (!Array.isArray(val)) {
                 throw verror(`Expected array, got ${typeof val}`);
             }
-            if (this._itemValidator) {
-                return val.map((item) => this._itemValidator!.parse(item));
+            if (this._inner) {
+                return val.map((item) => this._inner!.parse(item));
             }
             return val;
         });
     }
 
-    override defs(additionalProperties = false): ValidatorDef {
+    override defs(props = false): ValidatorDef {
         const baseDef = super.defs();
         const schema: Partial<ValidatorDef> = { type: 'array' };
 
-        if (this._itemValidator) {
-            schema.items = this._itemValidator.defs(additionalProperties);
+        if (this._inner) {
+            schema.items = this._inner.defs(props);
         }
 
         return { ...baseDef, ...schema };
-    }
-
-    get itemValidator(): ValueValidator | undefined {
-        return this._itemValidator;
     }
 
     minLength(min: number): this {
@@ -1362,12 +1394,10 @@ class ArrVal extends TypeVal<Array<unknown>> {
 // --- Set Validator ---
 //
 
-class SetVal extends TypeVal<Set<unknown>> {
-    private _itemValidator?: ValueValidator;
-
-    constructor(itemValidator?: ValueValidator) {
+class SetV extends TypeV<Set<unknown>> {
+    constructor(item?: Validator) {
         super();
-        this._itemValidator = itemValidator;
+        this._inner = item;
         // Add type coercion as the first validator
         this.push((val: unknown) => {
             if (val instanceof Set) {
@@ -1376,7 +1406,7 @@ class SetVal extends TypeVal<Set<unknown>> {
             if (Array.isArray(val)) {
                 const set = new Set<unknown>();
                 for (const item of val) {
-                    const validated = this._itemValidator ? this._itemValidator.parse(item) : item;
+                    const validated = this._inner ? this._inner.parse(item) : item;
                     set.add(validated);
                 }
                 return set;
@@ -1385,19 +1415,15 @@ class SetVal extends TypeVal<Set<unknown>> {
         });
     }
 
-    override defs(additionalProperties = false): ValidatorDef {
+    override defs(props = false): ValidatorDef {
         const baseDef = super.defs();
         const schema: Partial<ValidatorDef> = { type: 'array', uniqueItems: true };
 
-        if (this._itemValidator) {
-            schema.items = this._itemValidator.defs(additionalProperties);
+        if (this._inner) {
+            schema.items = this._inner.defs(props);
         }
 
         return { ...baseDef, ...schema };
-    }
-
-    get itemValidator(): ValueValidator | undefined {
-        return this._itemValidator;
     }
 }
 
@@ -1405,45 +1431,41 @@ class SetVal extends TypeVal<Set<unknown>> {
 // --- Map Validator ---
 //
 
-class MapVal extends TypeVal<Map<string, unknown>> {
-    private _valueValidator?: ValueValidator;
-
-    constructor(valueValidator?: ValueValidator) {
+class MapV<V = unknown> extends TypeV<Map<string, V>> {
+    constructor(value?: Validator<V>) {
         super();
-        this._valueValidator = valueValidator;
-        // Add type coercion as the first validator
+        this._inner = value;
+        // Add type coercion as the first validator - converts to Map
         this.push((val: unknown) => {
             if (val instanceof Map) {
-                return val as Map<string, unknown>;
+                const result = new Map<string, V>();
+                for (const [k, v] of val.entries()) {
+                    result.set(k, (this._inner ? this._inner.parse(v) : v) as V);
+                }
+                return result;
             }
             if (val && typeof val === 'object' && !Array.isArray(val)) {
-                const entries = Object.entries(val as Record<string, unknown>);
-                const map = new Map<string, unknown>();
-                for (const [k, v] of entries) {
-                    const validated = this._valueValidator ? this._valueValidator.parse(v) : v;
-                    map.set(k, validated);
+                const result = new Map<string, V>();
+                for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+                    result.set(k, (this._inner ? this._inner.parse(v) : v) as V);
                 }
-                return map;
+                return result;
             }
             throw verror(`Expected Map or object, got ${typeof val}`);
         });
     }
 
-    override defs(additionalProperties = false): ValidatorDef {
+    override defs(props = false): ValidatorDef {
         const baseDef = super.defs();
         const schema: Partial<ValidatorDef> = { type: 'object' };
 
-        if (this._valueValidator) {
-            schema.additionalProperties = this._valueValidator.defs(additionalProperties);
+        if (this._inner) {
+            schema.additionalProperties = this._inner.defs(props);
         } else {
             schema.additionalProperties = true;
         }
 
         return { ...baseDef, ...schema };
-    }
-
-    get valueValidator(): ValueValidator | undefined {
-        return this._valueValidator;
     }
 }
 
@@ -1451,29 +1473,46 @@ class MapVal extends TypeVal<Map<string, unknown>> {
 // --- Union Validator ---
 //
 
-class UnionVal<T> extends TypeVal<T> {
-    private _unionValidators: readonly ValueValidator[];
+class UnionV<T> extends TypeV<T> {
+    private _union: readonly Validator[];
 
-    constructor(validators: readonly ValueValidator[]) {
+    constructor(validators: readonly Validator[]) {
         super();
         if (!validators || validators.length < 2) {
             throw verror('Union requires at least 2 validators');
         }
-        this._unionValidators = validators;
+        this._union = validators;
+
+        // Add union validation logic to the checks array
+        this.push((value: unknown) => {
+            const errors: string[] = [];
+
+            // Try each validator in order (first-match strategy)
+            for (const validator of this._union) {
+                try {
+                    const result = validator.parse(value);
+                    return result as T;
+                } catch (err) {
+                    // Collect error message
+                    errors.push((err as Error).message);
+                }
+            }
+
+            // All validators failed - throw with aggregate error
+            throw verror(`Value does not match any union member:\n${errors.map((e, i) => `  [${i}] ${e}`).join('\n')}`);
+        });
     }
 
-    override defs(additionalProperties = false): ValidatorDef {
+    override defs(props = false): ValidatorDef {
         const baseDef = super.defs();
-        const validators = this._unionValidators;
+        const validators = this._union;
 
         if (!validators || validators.length === 0) {
             return baseDef;
         }
 
         // Convert each validator to JSON Schema
-        const anyOfSchemas: ValidatorDef[] = validators
-            .map((v) => v.defs(additionalProperties))
-            .filter((s) => Object.keys(s).length > 0);
+        const anyOfSchemas: ValidatorDef[] = validators.map((v) => v.defs(props)).filter((s) => Object.keys(s).length > 0);
 
         if (anyOfSchemas.length === 0) {
             return baseDef;
@@ -1491,7 +1530,7 @@ class UnionVal<T> extends TypeVal<T> {
 
         if (allPrimitives) {
             // Extract unique primitive types
-            const types = Array.from(new Set(anyOfSchemas.map((s) => s.type as string))) as PrimitiveType[];
+            const types = Array.from(new Set(anyOfSchemas.map((s) => s.type as PrimitiveType)));
             return {
                 ...baseDef,
                 type: types.length === 1 ? types[0] : types,
@@ -1503,47 +1542,20 @@ class UnionVal<T> extends TypeVal<T> {
         delete result.type;
         return result;
     }
-    get unionValidators(): readonly ValueValidator[] {
-        return this._unionValidators;
-    }
+}
 
-    override parse(value: unknown): T | undefined {
-        // First, check if there are base validators (like optional()) and apply them
-        // This handles optional() and default() at the union level
-        if (this._validators.length > 0) {
-            let processedValue: unknown = value;
-            for (const validator of this._validators) {
-                processedValue = validator(processedValue as T);
-                if (processedValue === undefined) {
-                    return undefined;
-                }
-            }
-            value = processedValue;
-        }
-
-        const errors: string[] = [];
-
-        // Try each validator in order (first-match strategy)
-        for (const validator of this._unionValidators) {
-            try {
-                const result = validator.parse(value);
-                return result as T;
-            } catch (err) {
-                // Collect error message
-                errors.push((err as Error).message);
-            }
-        }
-
-        // All validators failed - throw with aggregate error
-        throw verror(`Value does not match any union member:\n${errors.map((e, i) => `  [${i}] ${e}`).join('\n')}`);
+// --- Enum Validator is a Union of literals --
+class EnumV<T> extends UnionV<T> {
+    constructor(values: readonly (string | number | boolean)[]) {
+        super(values.map((v) => literal(v)));
     }
 }
 
 // Zod-compatible optional: makes any validator accept undefined
 // Legacy optional: creates an optional loose object (backward compatibility)
-export function optional<T>(validator: ValueValidator<T>): ValueValidator<T | undefined>;
-export function optional(schema?: Schema): ObjVal;
-export function optional<T>(validatorOrSchema?: ValueValidator<T> | Schema): ValueValidator<T | undefined> | ObjVal {
+export function optional<T>(validator: Validator<T>): Validator<T | undefined>;
+export function optional(schema?: Schema): ObjV;
+export function optional<T>(validatorOrSchema?: Validator<T> | Schema): Validator<T | undefined> {
     // Check if it's a ValueValidator by checking for push method (ValueValidator-specific)
     if (
         validatorOrSchema &&
@@ -1551,155 +1563,99 @@ export function optional<T>(validatorOrSchema?: ValueValidator<T> | Schema): Val
         'push' in validatorOrSchema &&
         typeof validatorOrSchema.push === 'function'
     ) {
-        return (validatorOrSchema as ValueValidator<T>).optional();
+        return (validatorOrSchema as Validator<T>).optional();
     }
     // Otherwise, treat as Schema (plain object) - use legacy behavior: create optional loose object
-    return new ObjVal(validatorOrSchema as Schema).passthrough().optional();
+    return new ObjV(validatorOrSchema as Schema).passthrough().optional() as Validator<T | undefined>;
 }
 
 //
 // --- Exports and Utility Functions ---
 //
 
-export type Schema = Record<string, ValueValidator>;
-export const array = (itemValidator?: ValueValidator) => new ArrVal(itemValidator);
-export const bigint = () => new BigIntVal();
-export const boolean = () => new BoolVal();
-export const date = () => new DateVal();
-export const email = () => new StrVal().email();
-export const int = () => new NumVal().int();
-export const literal = <T extends string | number | boolean | null | undefined>(value: T) => new LiteralVal(value);
-export const map = (valueValidator?: ValueValidator) => new MapVal(valueValidator);
-export const nullable = <T>(validator: ValueValidator<T>) => new NullableVal(validator);
-export const nullish = <T>(validator: ValueValidator<T>) => {
-    const val = new NullishVal(validator);
-    val.isOptional = true;
-    return val;
-};
-export const number = () => new NumVal();
-export const object = (schema?: Schema) => new ObjVal(schema);
-export const strictObject = (schema?: Schema) => new ObjVal(schema).strict();
-export const looseObject = (schema?: Schema) => new ObjVal(schema).passthrough();
-export const record = (valueValidator?: ValueValidator) => new MapVal(valueValidator);
-export const unknown = () => new UnknownVal();
-
-export const set = (itemValidator?: ValueValidator) => new SetVal(itemValidator);
-export const string = () => new StrVal();
-export const union = <T extends readonly [ValueValidator, ValueValidator, ...ValueValidator[]]>(validators: T) =>
-    new UnionVal<T[number] extends ValueValidator<infer U> ? U : never>(validators);
+export type Schema = Record<string, Validator>;
+export const array = (item?: Validator) => new ArrV(item);
+export const bigint = () => new BigIntV();
+export const boolean = () => new BoolV();
+export const date = () => new DateV();
+export const email = () => new StrV().email();
+export const int = () => new NumV().int();
+export const literal = <T extends string | number | boolean | null | undefined>(value: T) => new LiteralV(value);
+export const map = (value?: Validator) => new MapV(value);
+export const nullable = <T>(validator: Validator<T>) => new NullableV(validator);
+export const nullish = <T>(validator: Validator<T>) => new NullishV(validator);
+export const number = () => new NumV();
+export const object = <S extends Schema>(schema?: S) => new ObjV<S>(schema as S);
+export const strictObject = <S extends Schema>(schema?: S) => new ObjV<S>(schema as S).strict();
+export const looseObject = <S extends Schema>(schema?: S) => new ObjV<S>(schema as S).passthrough();
+export const record = <V>(value?: Validator<V>) => new MapV<V>(value);
+export const unknown = () => new UnknownV();
+export const set = (item?: Validator) => new SetV(item);
+export const string = () => new StrV();
+export const enumeration = <T extends readonly (string | number | boolean)[]>(values: T) => new EnumV<T[number]>(values);
 
 // Static singleton instances for stateless validators
-const NAN_VALIDATOR = new NanVal();
-const NULL_VALIDATOR = new NullVal();
-const UNDEFINED_VALIDATOR = new UndefinedVal();
-const VOID_VALIDATOR = new VoidVal();
+const NAN_VALIDATOR = new NanV();
+const NULL_VALIDATOR = new NullV();
+const UNDEFINED_VALIDATOR = new UndefinedV();
+const VOID_VALIDATOR = new VoidV();
 export const nan = () => NAN_VALIDATOR;
-export const nullValidator = () => NULL_VALIDATOR;
-export const undefinedValidator = () => UNDEFINED_VALIDATOR;
-export const voidValidator = () => VOID_VALIDATOR;
+export const nullVal = () => NULL_VALIDATOR;
+export const undefinedVal = () => UNDEFINED_VALIDATOR;
+export const voidVal = () => VOID_VALIDATOR;
 
 // shorthands
-export const uuid = () => new StrVal().uuid();
-export const url = () => new StrVal().url();
-export const httpUrl = () => new StrVal().httpUrl();
-export const hostname = () => new StrVal().hostname();
-export const emoji = () => new StrVal().emoji();
-export const base64 = () => new StrVal().base64();
-export const base64url = () => new StrVal().base64url();
-export const hex = () => new StrVal().hex();
-export const jwt = () => new StrVal().jwt();
-export const nanoid = () => new StrVal().nanoid();
-export const cuid = () => new StrVal().cuid();
-export const cuid2 = () => new StrVal().cuid2();
-export const ulid = () => new StrVal().ulid();
-export const ipv4 = () => new StrVal().ipv4();
-export const ipv6 = () => new StrVal().ipv6();
-export const cidrv4 = () => new StrVal().cidrv4();
-export const cidrv6 = () => new StrVal().cidrv6();
-export const hash = (algorithm: 'md5' | 'sha1' | 'sha256' | 'sha384' | 'sha512') => new StrVal().hash(algorithm);
+export const uuid = () => new StrV().uuid();
+export const url = () => new StrV().url();
+export const httpUrl = () => new StrV().httpUrl();
+export const hostname = () => new StrV().hostname();
+export const emoji = () => new StrV().emoji();
+export const base64 = () => new StrV().base64();
+export const base64url = () => new StrV().base64url();
+export const hex = () => new StrV().hex();
+export const jwt = () => new StrV().jwt();
+export const nanoid = () => new StrV().nanoid();
+export const cuid = () => new StrV().cuid();
+export const cuid2 = () => new StrV().cuid2();
+export const ulid = () => new StrV().ulid();
+export const ipv4 = () => new StrV().ipv4();
+export const ipv6 = () => new StrV().ipv6();
+export const cidrv4 = () => new StrV().cidrv4();
+export const cidrv6 = () => new StrV().cidrv6();
+export const hash = (algorithm: 'md5' | 'sha1' | 'sha256' | 'sha384' | 'sha512') => new StrV().hash(algorithm);
 
-export const isoDate = () => new StrVal().isoDate();
-export const isoTime = () => new StrVal().isoTime();
-export const isoDatetime = () => new StrVal().isoDatetime();
-export const isoDuration = () => new StrVal().isoDuration();
+export const isoDate = () => new StrV().isoDate();
+export const isoTime = () => new StrV().isoTime();
+export const isoDatetime = () => new StrV().isoDatetime();
+export const isoDuration = () => new StrV().isoDuration();
+
+// Helper to simplify extracted union types
+type ExtractTypes<T extends readonly Validator[]> = T[number] extends Validator<infer U>
+    ? U extends object
+        ? { [K in keyof U]: U[K] }
+        : U
+    : never;
+
+export const union = <T extends readonly [Validator, Validator, ...Validator[]]>(validators: T) =>
+    new UnionV<ExtractTypes<T>>(validators);
 
 export function parseSchema<T extends Record<string, unknown>>(validator: Schema, obj: unknown): T | undefined {
-    if (typeof obj !== 'object' || obj === undefined) return undefined;
-
-    const res = {} as T;
-    const objRecord = obj as Record<string, unknown>;
-
-    // Fast path for empty schema
-    let hasValidators = false;
-    let hasOptionalFields = false;
-    for (const prop in validator) {
-        if (Object.hasOwn(validator, prop)) {
-            hasValidators = true;
-            if (validator[prop].isOptional) {
-                hasOptionalFields = true;
-                break;
-            }
-        }
+    // Return undefined for non-object inputs
+    if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
+        return undefined;
     }
-    if (!hasValidators) {
-        return obj as T;
-    }
-
-    // Fast path for required-only schemas
-    if (!hasOptionalFields) {
-        for (const prop in validator) {
-            if (!Object.hasOwn(validator, prop)) continue;
-            const validatorInstance = validator[prop];
-            const inputValue = objRecord[prop];
-
-            if (inputValue === undefined) {
-                throw verror(`Required property '${prop}' is missing`);
-            }
-
-            const value = validatorInstance.parse(inputValue);
-            if (value !== undefined) {
-                (res as Record<string, unknown>)[prop] = value;
-            }
-        }
-        return res;
-    }
-
-    // Schema has optional fields
-    for (const prop in validator) {
-        if (!Object.hasOwn(validator, prop)) continue;
-        const validatorInstance = validator[prop];
-        const inputValue = objRecord[prop];
-
-        if (inputValue === undefined) {
-            if (!validatorInstance.isOptional) {
-                throw verror(`Required property '${prop}' is missing`);
-            }
-            // For optional fields, skip validation - don't call valueOf with undefined
-            // unless there's a default value defined
-            if (validatorInstance.defs()?.default !== undefined) {
-                const value = validatorInstance.parse(inputValue);
-                if (value !== undefined) {
-                    (res as Record<string, unknown>)[prop] = value;
-                }
-            }
-            continue;
-        }
-
-        const value = validatorInstance.parse(inputValue);
-        if (value !== undefined) {
-            (res as Record<string, unknown>)[prop] = value;
-        }
-    }
-    return res;
+    return object(validator).parse(obj) as T;
 }
 
 // Safe parse utility: note the return type here is aligned with safe.ts, not with zod's.
-export function safeParse<T extends Record<string, unknown>>(
-    validator: Schema,
-    value: unknown,
-): [T | undefined, Error | undefined] {
+export function safeParse<T = unknown>(validator: Schema | TypeV<T>, value: unknown): [T | undefined, Error | undefined] {
     try {
-        return [parse<T>(validator, value), undefined];
+        // Check if validator is a TypeV instance (like UnionV, ObjV, etc.)
+        if (validator && typeof validator === 'object' && 'parse' in validator && typeof validator.parse === 'function') {
+            return [validator.parse(value) as T, undefined];
+        }
+        // Otherwise, treat as Schema object and delegate to parseSchema
+        return [parseSchema(validator as Schema, value) as T, undefined];
     } catch (err) {
         return [undefined, err instanceof Error ? err : new Error(Object(err).message ?? String(err))];
     }

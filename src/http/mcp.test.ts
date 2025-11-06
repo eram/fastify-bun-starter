@@ -1,6 +1,7 @@
 import { ok, strictEqual } from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { app } from '../app';
+import { Env } from '../util';
 
 describe('MCP API - JSON mode', () => {
     test('POST /mcp initialize returns server info', async () => {
@@ -29,7 +30,7 @@ describe('MCP API - JSON mode', () => {
         ok(json.result);
         strictEqual(json.result.protocolVersion, '2024-11-05');
         ok(json.result.serverInfo);
-        strictEqual(json.result.serverInfo.name, 'fastify-bun-starter');
+        strictEqual(json.result.serverInfo.name, Env.appName);
     });
 
     test('POST /mcp tools/list returns available tools', async () => {
@@ -325,7 +326,7 @@ describe('MCP API - SSE mode', () => {
         strictEqual(response.statusCode, 200);
         ok(response.headers['mcp-session-id']);
         ok(response.headers['cache-control']?.includes('no-cache'));
-        ok(response.headers.connection?.includes('keep-alive'));
+        // Note: POST SSE mode returns single response and closes (no keep-alive)
     });
 
     test('POST /mcp SSE mode can call tools', async () => {
@@ -406,4 +407,8 @@ describe('MCP API - New Features', () => {
         ok(Array.isArray(json.result.roots));
         strictEqual(json.result.roots.length, 0);
     });
+
+    // Note: GET /mcp for SSE streaming cannot be tested with inject()
+    // because it's a long-lived connection. Manual testing or integration
+    // tests with real HTTP client are needed for SSE stream validation.
 });

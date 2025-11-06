@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { getWorkerCount } from '../cluster';
+import { getCluster } from '../cluster';
 import { z } from '../lib/validator';
 
 /**
@@ -23,7 +23,7 @@ export async function registerHealthRoute(app: FastifyInstance) {
             },
         },
         async () => {
-            const workers = getWorkerCount();
+            const workers = getCluster()?.getStats().activeWorkers;
             return {
                 status: 'ok',
                 timestamp: new Date().toISOString(),

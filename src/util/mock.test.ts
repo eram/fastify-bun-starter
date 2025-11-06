@@ -1,5 +1,5 @@
 import { deepEqual, equal, ok, strictEqual, throws } from 'node:assert/strict';
-import { describe, test } from 'node:test';
+import { describe, mock, test } from 'node:test';
 
 describe('mock utility', () => {
     test('is mock working', () => {
@@ -54,10 +54,15 @@ describe('mock utility', () => {
         mockFn(5);
         mockFn(10);
 
+        // @ts-expect-error - Bun mock has results property
         strictEqual(mockFn.mock.results.length, 2, 'should track 2 results');
+        // @ts-expect-error - Bun mock has results property
         strictEqual(mockFn.mock.results[0].type, 'return', 'first result type should be return');
+        // @ts-expect-error - Bun mock has results property
         strictEqual(mockFn.mock.results[0].value, 10, 'first result value should be 10');
+        // @ts-expect-error - Bun mock has results property
         strictEqual(mockFn.mock.results[1].type, 'return', 'second result type should be return');
+        // @ts-expect-error - Bun mock has results property
         strictEqual(mockFn.mock.results[1].value, 20, 'second result value should be 20');
     });
 
@@ -68,8 +73,10 @@ describe('mock utility', () => {
         mockFn(2);
         strictEqual(mockFn.mock.calls.length, 2, 'should have 2 calls before clear');
 
+        // @ts-expect-error - Bun mock has mockClear method
         mockFn.mockClear();
         strictEqual(mockFn.mock.calls.length, 0, 'should have 0 calls after clear');
+        // @ts-expect-error - Bun mock has results property
         strictEqual(mockFn.mock.results.length, 0, 'should have 0 results after clear');
     });
 
@@ -78,6 +85,7 @@ describe('mock utility', () => {
 
         strictEqual(mockFn(), 'original', 'should return original value');
 
+        // @ts-expect-error - Bun mock has mockImplementation method
         mockFn.mockImplementation(() => 'changed');
         strictEqual(mockFn(), 'changed', 'should return changed value');
     });
@@ -85,6 +93,7 @@ describe('mock utility', () => {
     test('mockImplementationOnce changes implementation for one call', () => {
         const mockFn = mock.fn(() => 'default');
 
+        // @ts-expect-error - Bun mock has mockImplementationOnce method
         mockFn.mockImplementationOnce(() => 'once');
         strictEqual(mockFn(), 'once', 'first call should return once');
         strictEqual(mockFn(), 'default', 'second call should return default');
@@ -94,6 +103,7 @@ describe('mock utility', () => {
     test('mockReturnValue sets return value', () => {
         const mockFn = mock.fn();
 
+        // @ts-expect-error - Bun mock has mockReturnValue method
         mockFn.mockReturnValue(42);
         strictEqual(mockFn(), 42, 'should return 42');
         strictEqual(mockFn(), 42, 'should still return 42');
@@ -102,6 +112,7 @@ describe('mock utility', () => {
     test('mockReturnValueOnce sets return value for one call', () => {
         const mockFn = mock.fn(() => 'default');
 
+        // @ts-expect-error - Bun mock has mockReturnValueOnce method
         mockFn.mockReturnValueOnce('once');
         strictEqual(mockFn(), 'once', 'first call should return once');
         strictEqual(mockFn(), 'default', 'second call should return default');
@@ -110,8 +121,11 @@ describe('mock utility', () => {
     test('multiple mockReturnValueOnce calls', () => {
         const mockFn = mock.fn(() => 'default');
 
+        // @ts-expect-error - Bun mock has mockReturnValueOnce method
         mockFn.mockReturnValueOnce('first');
+        // @ts-expect-error - Bun mock has mockReturnValueOnce method
         mockFn.mockReturnValueOnce('second');
+        // @ts-expect-error - Bun mock has mockReturnValueOnce method
         mockFn.mockReturnValueOnce('third');
 
         strictEqual(mockFn(), 'first', 'first call should return first');
@@ -137,7 +151,7 @@ describe('mock utility', () => {
         mockFn('world');
 
         // Verify calls structure matches unknown[][]
-        const calls: unknown[][] = mockFn.mock.calls;
+        const calls: unknown[][] = mockFn.mock.calls as unknown as unknown[][];
         ok(Array.isArray(calls), 'calls should be an array');
         ok(Array.isArray(calls[0]), 'calls[0] should be an array');
         equal(calls[0][0], 'hello', 'calls[0][0] should be hello');
@@ -197,22 +211,35 @@ describe('mock utility', () => {
         strictEqual(mockFn.mock.calls.length, 3, 'should track all callback calls');
     });
 
-    test('mock reset does not throw', () => {
-        // reset() is for API compatibility
-        mock.reset();
-        ok(true, 'reset should not throw');
-    });
-
-    test('mock.restore is alias for restoreAll', () => {
+    test('individual mock contexts have restore() method', () => {
         const obj = {
             test: () => 'original',
         };
 
-        mock.method(obj, 'test', () => 'mocked');
+        const mockMethod = mock.method(obj, 'test', () => 'mocked');
         strictEqual(obj.test(), 'mocked', 'should use mocked implementation');
+        strictEqual(mockMethod.mock.calls.length, 1, 'should have 1 call');
 
-        mock.restore();
+        // Individual mock contexts have restore() method (not MockTracker)
+        // restore() only restores implementation, does NOT clear call history
+        mockMethod.mock.restore();
         strictEqual(obj.test(), 'original', 'restore() should restore original implementation');
+        strictEqual(mockMethod.mock.calls.length, 1, 'restore() should NOT clear call history');
+
+        // Test mockClear() for clearing call history
+        // @ts-expect-error - Bun mock has mockClear method
+        mockMethod.mockClear();
+        strictEqual(mockMethod.mock.calls.length, 0, 'mockClear() should clear call history');
+
+        // After individual restore, tracker still has association (can restoreAll)
+        const obj2 = { fn: () => 'original2' };
+        mock.method(obj2, 'fn', () => 'mocked2');
+        strictEqual(obj2.fn(), 'mocked2', 'should use mocked implementation');
+
+        mock.restoreAll();
+        strictEqual(obj2.fn(), 'original2', 'restoreAll should still work');
+
+        mock.reset(); // Clean up
     });
 
     // mock.method() tests
@@ -323,5 +350,52 @@ describe('mock utility', () => {
         strictEqual(obj.method2(), 'original2', 'method2 should be restored');
         strictEqual(obj.method1, original1, 'should restore exact original method1');
         strictEqual(obj.method2, original2, 'should restore exact original method2');
+    });
+
+    test('mock.reset() restores originals and disassociates from tracker', () => {
+        const obj = { fn: () => 'original' };
+
+        // Mock the method
+        const mockFn = mock.method(obj, 'fn', () => 'mocked');
+        strictEqual(obj.fn(), 'mocked', 'should use mocked implementation');
+        strictEqual(mockFn.mock.calls.length, 1, 'should have 1 call');
+
+        // reset() restores originals AND disassociates (clears tracking arrays)
+        mock.reset();
+
+        // After reset(), original function is restored
+        strictEqual(obj.fn(), 'original', 'should restore original after reset');
+
+        // After reset(), calling restoreAll() has no effect (disassociated)
+        mock.restoreAll();
+        strictEqual(obj.fn(), 'original', 'restoreAll after reset should have no effect');
+
+        // Mock a new method to verify tracker still works
+        mock.method(obj, 'fn', () => 'new mock');
+        strictEqual(obj.fn(), 'new mock', 'tracker should work for new mocks after reset');
+
+        mock.reset(); // Clean up
+    });
+
+    test('mock.restoreAll() restores originals but keeps association', () => {
+        const obj = { fn: () => 'original' };
+
+        // Mock the method
+        mock.method(obj, 'fn', () => 'mocked');
+        strictEqual(obj.fn(), 'mocked', 'should use mocked implementation');
+
+        // restoreAll() restores original but does NOT disassociate
+        mock.restoreAll();
+        strictEqual(obj.fn(), 'original', 'should restore original implementation');
+
+        // Mock the same method again - should work because still associated
+        mock.method(obj, 'fn', () => 'mocked again');
+        strictEqual(obj.fn(), 'mocked again', 'can mock again after restoreAll');
+
+        // Call restoreAll() again - should work because still associated
+        mock.restoreAll();
+        strictEqual(obj.fn(), 'original', 'restoreAll can be called multiple times');
+
+        mock.reset(); // Clean up and disassociate
     });
 });

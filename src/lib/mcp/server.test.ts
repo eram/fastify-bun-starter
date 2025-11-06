@@ -1,5 +1,7 @@
-import { deepStrictEqual, ok, strictEqual } from 'node:assert/strict';
+import { deepStrictEqual, equal, ok, strictEqual } from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import { ErrorEx } from '../../util/error';
+import { MCPServer } from './server';
 import type {
     CancelledNotification,
     JSONRPCNotification,
@@ -7,7 +9,7 @@ import type {
     RootsListChangedNotification,
     ToolListChangedNotification,
 } from './types';
-import { MCPServer } from './server';
+import { McpError } from './types';
 
 describe('MCP Server - Progress Notifications', () => {
     test('should send progress notification when configured', async () => {
@@ -62,12 +64,12 @@ describe('MCP Server - Cancellation', () => {
             {
                 name: 'slow-tool',
                 description: 'A slow tool',
-                inputSchema: { type: 'object' },
+                inputSchema: { type: 'object', properties: new Map(), required: [] },
             },
             async () => {
                 // Simulate slow operation
                 await new Promise((resolve) => setTimeout(resolve, 100));
-                return { content: [{ type: 'text', text: 'Done' }] };
+                return { content: [{ type: 'text', text: 'Done' }], isError: false };
             },
         );
 
@@ -95,10 +97,10 @@ describe('MCP Server - Cancellation', () => {
             {
                 name: 'test-tool',
                 description: 'A test tool',
-                inputSchema: { type: 'object' },
+                inputSchema: { type: 'object', properties: new Map(), required: [] },
             },
             async () => {
-                return { content: [{ type: 'text', text: 'Result' }] };
+                return { content: [{ type: 'text', text: 'Result' }], isError: false };
             },
         );
 
@@ -157,10 +159,10 @@ describe('MCP Server - List Change Notifications', () => {
             {
                 name: 'test-tool',
                 description: 'A test tool',
-                inputSchema: { type: 'object' },
+                inputSchema: { type: 'object', properties: new Map(), required: [] },
             },
             async () => {
-                return { content: [{ type: 'text', text: 'Result' }] };
+                return { content: [{ type: 'text', text: 'Result' }], isError: false };
             },
         );
 
@@ -217,7 +219,7 @@ describe('MCP Server - Roots Support', () => {
             notifications.push(notification);
         });
 
-        server.setRoots([{ uri: 'file:///project1' }]);
+        server.setRoots([{ uri: 'file:///project1', name: 'project1' }]);
 
         strictEqual(notifications.length, 1);
         const notification = notifications[0] as RootsListChangedNotification;
@@ -247,7 +249,7 @@ describe('MCP Server - Roots Support', () => {
 
         const testRoots = [
             { uri: 'file:///workspace1', name: 'Workspace 1' },
-            { uri: 'file:///workspace2' },
+            { uri: 'file:///workspace2', name: 'Workspace 2' },
         ];
         server.setRoots(testRoots);
 
@@ -295,11 +297,11 @@ describe('MCP Server - Progress Token in Tool Calls', () => {
             {
                 name: 'progress-tool',
                 description: 'A tool with progress',
-                inputSchema: { type: 'object' },
+                inputSchema: { type: 'object', properties: new Map(), required: [] },
             },
             async (_args, progressToken) => {
                 receivedToken = progressToken;
-                return { content: [{ type: 'text', text: 'Done' }] };
+                return { content: [{ type: 'text', text: 'Done' }], isError: false };
             },
         );
 
@@ -309,6 +311,7 @@ describe('MCP Server - Progress Token in Tool Calls', () => {
             method: 'tools/call',
             params: {
                 name: 'progress-tool',
+                // biome-ignore lint/style/useNamingConvention: _meta is part of MCP spec
                 _meta: { progressToken: 'progress-123' },
             },
         });
@@ -324,11 +327,11 @@ describe('MCP Server - Progress Token in Tool Calls', () => {
             {
                 name: 'no-progress-tool',
                 description: 'A tool without progress',
-                inputSchema: { type: 'object' },
+                inputSchema: { type: 'object', properties: new Map(), required: [] },
             },
             async (_args, progressToken) => {
                 receivedToken = progressToken;
-                return { content: [{ type: 'text', text: 'Done' }] };
+                return { content: [{ type: 'text', text: 'Done' }], isError: false };
             },
         );
 
@@ -340,5 +343,65 @@ describe('MCP Server - Progress Token in Tool Calls', () => {
         });
 
         strictEqual(receivedToken, undefined);
+    });
+});
+
+describe('McpError', () => {
+    test('creates McpError with string message', () => {
+        const err = new McpError('Server not found');
+        equal(err.message, 'Server not found');
+        equal(err.name, 'McpError');
+        ok(err instanceof McpError);
+        ok(err instanceof ErrorEx);
+        ok(err instanceof Error);
+    });
+
+    test('creates McpError from another Error', () => {
+        const originalErr = new Error('Original error');
+        const mcpErr = new McpError(originalErr);
+        equal(mcpErr.message, 'Original error');
+        equal(mcpErr.name, 'McpError');
+        ok(mcpErr instanceof McpError);
+    });
+
+    test('creates McpError from undefined', () => {
+        const err = new McpError(undefined);
+        equal(err.message, 'Unknown error');
+        equal(err.name, 'McpError');
+    });
+
+    test('creates McpError from null', () => {
+        const err = new McpError(null);
+        equal(err.message, 'Unknown error');
+        equal(err.name, 'McpError');
+    });
+
+    test('McpError in [data, error] tuple pattern', () => {
+        function operation(): [undefined, McpError] {
+            return [undefined, new McpError('Operation failed')];
+        }
+
+        const [, err] = operation();
+        ok(err instanceof McpError);
+        equal(err.message, 'Operation failed');
+    });
+
+    test('McpError thrown and caught', () => {
+        try {
+            throw new McpError('Test error');
+        } catch (e) {
+            ok(e instanceof McpError);
+            ok(e instanceof Error);
+            equal((e as McpError).message, 'Test error');
+        }
+    });
+
+    test('McpError JSON serialization', () => {
+        const err = new McpError('Serialization test');
+        const json = JSON.stringify(err);
+        // ErrorEx makes properties enumerable, so they should be in JSON
+        ok(json.length > 0);
+        equal(err.message, 'Serialization test');
+        equal(err.name, 'McpError');
     });
 });

@@ -4,6 +4,7 @@
  * Schemas are the source of truth - types are inferred from them
  */
 
+import { ErrorEx } from '../../util/error';
 import type { Infer } from '../validator/validator';
 import { array, boolean, literal, number, object, record, string, union } from '../validator/validator';
 
@@ -99,6 +100,7 @@ export const progressNotifParamsSchema = {
 export const toolCallParamsSchema = {
     name: string(),
     arguments: object().optional(),
+    // biome-ignore lint/style/useNamingConvention: _meta is part of MCP spec
     _meta: object({
         progressToken: union([string(), number()] as const).optional(),
     }).optional(),
@@ -167,3 +169,16 @@ export interface ToolListChangedNotification extends JSONRPCNotification {
     method: 'notifications/tools/list_changed';
     params?: Record<string, unknown>;
 }
+
+/**
+ * McpError - Custom error class for MCP operations
+ *
+ * Extends ErrorEx to provide MCP-specific error handling
+ * with proper error chaining and serialization support.
+ *
+ * Usage:
+ *   throw new McpError('Server not found');
+ *   throw new McpError(err); // Wraps another error
+ *   return [undefined, new McpError(err)]; // For [data, error] tuples
+ */
+export class McpError extends ErrorEx {}

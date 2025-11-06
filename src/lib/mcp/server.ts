@@ -168,7 +168,7 @@ export class MCPServer {
         return {
             protocolVersion: MCP_PROTOCOL_VERSION,
             capabilities: {
-                tools: {},
+                tools: new Map(),
                 roots: {
                     listChanged: true, // We support roots/list_changed notifications
                 },
@@ -302,8 +302,9 @@ export class MCPServer {
 
     /**
      * Send tools/list_changed notification
+     * Public method to allow external triggers (e.g., config changes)
      */
-    private async _sendToolListChangedNotification(): Promise<void> {
+    async sendToolListChangedNotification(): Promise<void> {
         if (!this._notificationSender) {
             return;
         }
@@ -317,6 +318,13 @@ export class MCPServer {
     }
 
     /**
+     * Send tools/list_changed notification (private wrapper)
+     */
+    private async _sendToolListChangedNotification(): Promise<void> {
+        await this.sendToolListChangedNotification();
+    }
+
+    /**
      * Send roots/list_changed notification
      */
     private async _sendRootsListChangedNotification(): Promise<void> {
@@ -327,6 +335,24 @@ export class MCPServer {
         const notification: RootsListChangedNotification = {
             jsonrpc: JSONRPC_VERSION,
             method: 'notifications/roots/list_changed',
+        };
+
+        await this._notificationSender(notification);
+    }
+
+    /**
+     * Send a generic notification to the client
+     * Used for custom notifications like tools/list_changed
+     */
+    async sendNotification(method: string, params?: unknown): Promise<void> {
+        if (!this._notificationSender) {
+            return;
+        }
+
+        const notification: JSONRPCNotification = {
+            jsonrpc: JSONRPC_VERSION,
+            method,
+            ...(params !== undefined && { params }),
         };
 
         await this._notificationSender(notification);

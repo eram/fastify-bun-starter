@@ -3,7 +3,7 @@ import { Buffer } from 'node:buffer';
 import fs from 'node:fs';
 import os from 'node:os';
 import { join } from 'node:path';
-import { describe, test } from 'node:test';
+import { describe, mock, test } from 'node:test';
 import * as safe from './safe';
 import { Dirent } from './safe';
 

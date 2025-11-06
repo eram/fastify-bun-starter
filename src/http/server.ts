@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import { type JsonSchemaTypeProvider, JsonSchemaValidatorCompiler } from '../lib/validator';
+import { type Provider, schemaCompiler } from '../lib/validator';
 import { Env } from '../util/env';
 import { replacerFn, reviverFn } from '../util/immutable';
 import { fromHumanBytes } from '../util/text';
@@ -20,8 +20,8 @@ export function createServer() {
             maxParamLength: Env.get('MAX_URL_LENGTH', 2048),
         },
     })
-        .withTypeProvider<JsonSchemaTypeProvider>()
-        .setValidatorCompiler(JsonSchemaValidatorCompiler);
+        .withTypeProvider<Provider>()
+        .setValidatorCompiler(schemaCompiler);
 
     // Use JSON.parse with custom reviver for BigInt support and __ property filtering
     // This replaces Fastify's default secure-json-parse with the much faster Bun.parse.
@@ -59,12 +59,12 @@ export async function registerAll(app: ReturnType<typeof createServer>) {
     // Register Swagger documentation
     await registerSwagger(app);
 
-    // Register all routes
+    // Register all HTTP routes
     await registerHealthRoute(app);
     await registerHelloRoute(app);
     await registerMCPRoute(app);
 
-    console.log('✓ Fastify app initialized');
+    console.log('Fastify app initialized');
 }
 
 /**

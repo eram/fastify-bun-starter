@@ -213,8 +213,8 @@ const wrapWithSafe = <T extends Record<string, unknown>>(
                         }
                         // Preserve 'buffer' encoding if explicitly set, otherwise add utf8
                         // @ts-expect-error TypeScript overload resolution issue
-                        const finalOptions = opts.encoding === 'buffer' ? opts : addUtf8Encoding(opts);
-                        return safe(() => value.apply(obj, [path, finalOptions]));
+                        const final = opts.encoding === 'buffer' ? opts : addUtf8Encoding(opts);
+                        return safe(() => value.apply(obj, [path, final]));
                     };
                     break;
 
@@ -223,15 +223,15 @@ const wrapWithSafe = <T extends Record<string, unknown>>(
                 case 'readlink':
                 case 'realpath':
                     result[key] = (path: fs.PathLike, options?: fs.ObjectEncodingOptions | string) => {
-                        const finalOptions = addUtf8Encoding(options);
-                        return safe(() => value.apply(obj, [path, finalOptions]));
+                        const final = addUtf8Encoding(options);
+                        return safe(() => value.apply(obj, [path, final]));
                     };
                     break;
 
                 case 'mkdtemp':
                     result[key] = (prefix: string, options?: fs.ObjectEncodingOptions | string) => {
-                        const finalOptions = addUtf8Encoding(options);
-                        return safe(() => value.apply(obj, [prefix, finalOptions]));
+                        const final = addUtf8Encoding(options);
+                        return safe(() => value.apply(obj, [prefix, final]));
                     };
                     break;
 

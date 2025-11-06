@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { type Infer, z } from '../lib/validator';
+import type { WithBody } from './route-types';
 
 /**
  * IETF BCP 47 locale pattern
@@ -35,7 +36,7 @@ const COMMON_LOCALES = [
  * - number: 1-15 digits, positive or negative
  * - locale: IETF BCP 47 format (e.g., en-US)
  */
-const numberFormatRequestSchema = {
+const numberFormatSchema = {
     number: z.number().describe('Number to format (1-15 digits, can be positive or negative)'),
     locale: z
         .string()
@@ -43,15 +44,15 @@ const numberFormatRequestSchema = {
         .describe('Locale in IETF BCP 47 format (e.g., en-US, de-DE)'),
 };
 
-type NumberFormatRequest = Infer<typeof numberFormatRequestSchema>;
+type NumberFormatRequest = Infer<typeof numberFormatSchema>;
 
 /**
  * Custom validator to check if number has max 15 digits
  */
-function hasMaxDigits(num: number, maxDigits: number): boolean {
-    const absNum = Math.abs(num);
-    const digits = absNum === 0 ? 1 : Math.floor(Math.log10(absNum)) + 1;
-    return digits <= maxDigits;
+function hasMaxDigits(num: number, max: number): boolean {
+    const abs = Math.abs(num);
+    const digits = abs === 0 ? 1 : Math.floor(Math.log10(abs)) + 1;
+    return digits <= max;
 }
 
 /**
@@ -59,10 +60,10 @@ function hasMaxDigits(num: number, maxDigits: number): boolean {
  */
 function isLocaleSupported(locale: string): boolean {
     try {
-        const formatter = new Intl.NumberFormat(locale);
-        const resolvedLocale = formatter.resolvedOptions().locale;
+        const fmt = new Intl.NumberFormat(locale);
+        const resolved = fmt.resolvedOptions().locale;
         // If the resolved locale is different, the requested locale might not be fully supported
-        return resolvedLocale.toLowerCase().startsWith(locale.toLowerCase().split('-')[0]);
+        return resolved.toLowerCase().startsWith(locale.toLowerCase().split('-')[0]);
     } catch {
         return false;
     }
@@ -89,12 +90,11 @@ function isLocaleSupported(locale: string): boolean {
  * }
  */
 export async function registerHelloRoute(app: FastifyInstance) {
-    // biome-ignore lint/style/useNamingConvention: Fastify generic type parameter
-    app.post<{ Body: NumberFormatRequest }>(
+    app.post<WithBody<NumberFormatRequest>>(
         '/hello',
         {
             schema: {
-                body: numberFormatRequestSchema,
+                body: numberFormatSchema,
                 response: {
                     200: {
                         formatted: z.string().describe('Formatted number string'),
@@ -106,8 +106,7 @@ export async function registerHelloRoute(app: FastifyInstance) {
                 },
             },
         },
-        // biome-ignore lint/style/useNamingConvention: Fastify generic type parameter
-        async (request: FastifyRequest<{ Body: NumberFormatRequest }>, reply: FastifyReply) => {
+        async (request: FastifyRequest<WithBody<NumberFormatRequest>>, reply: FastifyReply) => {
             const { number, locale } = request.body;
 
             // Validate number has max 15 digits
@@ -127,8 +126,8 @@ export async function registerHelloRoute(app: FastifyInstance) {
 
             // Format the number using Intl.NumberFormat
             try {
-                const formatter = new Intl.NumberFormat(locale);
-                const formatted = formatter.format(number);
+                const loc = new Intl.NumberFormat(locale);
+                const formatted = loc.format(number);
 
                 return {
                     formatted,

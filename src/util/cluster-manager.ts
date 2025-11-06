@@ -174,8 +174,8 @@ export class ClusterManager {
             this._error(`Worker ${worker.process.pid} died (${exitReason}). Restarting...`);
             this._fork();
         } else {
-            const isAboveThreshold = this._log.length > this._config.maxRestarts;
-            const logFn = isAboveThreshold ? this._crit : this._error;
+            const aboveMax = this._log.length > this._config.maxRestarts;
+            const logFn = aboveMax ? this._crit : this._error;
             logFn(
                 `Worker ${worker.process.pid} died (${exitReason}). ` +
                     `Max restarts (${this._config.maxRestarts}) reached within ${this._config.restartWindow}ms window. Not restarting.`,
@@ -203,7 +203,7 @@ export class ClusterManager {
 
             // Disconnect all workers
             const workers = Array.from(this._active.values());
-            const shutdownPromises = workers.map((worker) => {
+            const promises = workers.map((worker) => {
                 return new Promise<void>((resolve) => {
                     if (!worker.isConnected()) {
                         resolve();
@@ -226,7 +226,7 @@ export class ClusterManager {
                 });
             });
 
-            await Promise.all(shutdownPromises);
+            await Promise.all(promises);
             this._info('All workers shut down. Exiting primary.');
             process.exit(0);
         };
@@ -309,16 +309,16 @@ export class ClusterManager {
 
         // Wait for all workers to exit (with timeout)
         await new Promise<void>((resolve) => {
-            const checkInterval = setInterval(() => {
+            const interval = setInterval(() => {
                 if (this._active.size === 0) {
-                    clearInterval(checkInterval);
+                    clearInterval(interval);
                     resolve();
                 }
             }, 100);
 
             // Force exit after 5 seconds
             setTimeout(() => {
-                clearInterval(checkInterval);
+                clearInterval(interval);
                 for (const worker of this._active.values()) {
                     worker.kill('SIGKILL');
                 }

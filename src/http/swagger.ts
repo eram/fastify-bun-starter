@@ -119,6 +119,6 @@ export async function registerSwagger(app: FastifyInstance) {
         reply.type('text/html').send(html);
     });
 
-    console.log('✓ Swagger UI registered at /docs');
-    console.log('✓ OpenAPI spec available at /docs/json');
+    console.log('Swagger UI registered at /docs');
+    console.log('OpenAPI spec available at /docs/json');
 }

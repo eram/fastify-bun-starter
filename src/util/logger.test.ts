@@ -1,5 +1,5 @@
 import { deepEqual, doesNotThrow, match, notEqual, ok, strictEqual, throws } from 'node:assert/strict';
-import { describe, test } from 'node:test';
+import { describe, mock, test } from 'node:test';
 import { format } from 'node:util';
 import * as logger from './logger';
 import { warn } from './logger';
@@ -179,8 +179,11 @@ describe('logger tests', () => {
 
         strictEqual(nullFn.mock.calls.length, 3);
         const regex = /\d{1,2}T\d{1,2}:\d{1,2}:\d{1,2}\.\d{1,3}Z\s/;
+        // @ts-expect-error - Mock calls are indexable
         ok(!nullFn.mock.calls[0][0].match(regex));
+        // @ts-expect-error - Mock calls are indexable
         ok(nullFn.mock.calls[1][0].match(regex));
+        // @ts-expect-error - Mock calls are indexable
         ok(nullFn.mock.calls[2][0].match(regex));
     });
 
@@ -199,7 +202,7 @@ describe('logger tests', () => {
 
             // stdout may have been called by others while we slept
             ok(fn.mock.calls.length >= 1);
-            const found = fn.mock.calls.find((c) => c[0].toString().includes(t.name));
+            const found = fn.mock.calls.find((c: any) => c[0].toString().includes(t.name));
             ok(found, 'log message not found');
         } finally {
             mock.restoreAll();

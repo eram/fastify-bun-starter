@@ -9,7 +9,7 @@ import { describe, test } from 'node:test';
  * Helper function to run the app and capture output
  */
 async function runApp(args = ''): Promise<string> {
-    const cmd = args ? `bun run src/cli.ts ${args}` : 'bun run src/cli.ts';
+    const cmd = args ? `bun src/cli.ts ${args}` : 'bun src/cli.ts';
 
     return new Promise((resolve, reject) => {
         const proc = spawn(cmd, { shell: true });
@@ -39,14 +39,14 @@ describe('CLI Integration Tests', () => {
         const output = await runApp();
         match(output, /USAGE/);
         match(output, /COMMANDS/);
-        match(output, /server/);
+        match(output, /mcp/);
     });
 
     test('shows help with --help flag', async () => {
         const output = await runApp('--help');
         match(output, /USAGE/);
         match(output, /COMMANDS/);
-        match(output, /server/);
+        match(output, /mcp/);
     });
 
     test('shows error for unknown command', async () => {
