@@ -1,6 +1,6 @@
 [test]
 # Preload mock utility for tests
-preload = ["./src/util/mock.ts"]
+preload = ["./script/mock-prehook.ts"]
 
 # Coverage configuration
 # Note: coverage, coverageReporter are passed via CLI for better control

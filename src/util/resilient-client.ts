@@ -11,7 +11,7 @@
  * - Automatic response decompression (gzip, deflate, brotli)
  */
 
-import { isDebuggerAttached } from './debugger';
+import { isDebugging } from './debugger';
 import { ErrorEx } from './error';
 import { sleep } from './sleep';
 
@@ -19,7 +19,7 @@ export class ClientOptions {
     readonly maxTries: number = 5; // max number of failures before giving up
     readonly baseDelay: number = 100; // initial delay between retries
     readonly maxDelay: number = 10000; // max delay between retries
-    readonly timeout: number = isDebuggerAttached() ? 0 : 60000; // 0 = no timeout in debug mode
+    readonly timeout: number = isDebugging() ? 0 : 60000; // 0 = no timeout in debug mode
     readonly afterFn: // client calls the specified function to read the response
         | 'json' // >> returns a JSON object
         | 'text' // >> returns a string/html

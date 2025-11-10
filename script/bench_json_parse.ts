@@ -73,7 +73,7 @@ const featureSchema = {
             },
         },
     },
-};
+} as const;
 
 const collectionSchema = {
     type: 'object',
@@ -84,7 +84,7 @@ const collectionSchema = {
             items: featureSchema,
         },
     },
-};
+} as const;
 
 // Generate test data (in-memory objects, not JSON strings)
 function generateTestData(count: number) {
@@ -168,7 +168,7 @@ function benchFastJsonStringify(data: unknown, iterations: number): BenchResult 
 
     let result: string | undefined;
     for (let i = 0; i < iterations; i++) {
-        result = stringify(data);
+        result = stringify(data as object);
     }
 
     const time = performance.now() - t0;
@@ -234,7 +234,7 @@ function benchFastStringifyParse(data: unknown, iterations: number): BenchResult
 
     let result: unknown;
     for (let i = 0; i < iterations; i++) {
-        const jsonString = stringify(data);
+        const jsonString = stringify(data as object);
         result = JSON.parse(jsonString);
     }
 

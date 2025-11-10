@@ -54,7 +54,7 @@
  * ```
  */
 
-import { ErrorEx } from '../../util';
+import { ErrorEx } from '../../util/error';
 
 // JSON Schema primitive types - defined locally to avoid circular dependency
 export type PrimitiveType = 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array' | 'null';
@@ -95,6 +95,11 @@ export interface ValidatorDef {
     additionalProperties?: boolean | ValidatorDef;
 }
 
+// SafeParse result types (Zod-compatible)
+export type SafeParseSuccess<T> = { success: true; data: T };
+export type SafeParseError = { success: false; error: Error };
+export type SafeParseResult<T> = SafeParseSuccess<T> | SafeParseError;
+
 export interface Validator<T = unknown> {
     parse(value: unknown): T;
     push(check: (arg: T) => T): number;
@@ -103,6 +108,8 @@ export interface Validator<T = unknown> {
     describe(description: string): this;
     defs(props?: boolean): ValidatorDef; // Get Json schema definition
     optional(): Validator<T | undefined>; // Make validator accept undefined
+    default(val: T): this; // Set default value for undefined/null inputs
+    safeParse(value: unknown): SafeParseResult<T>; // Zod-compatible safe parsing
 }
 
 // Validator error class
@@ -181,11 +188,13 @@ export abstract class TypeV<T> implements Validator<T> {
         return this;
     }
 
-    safeParse(value: unknown): [T | undefined, Error | undefined] {
+    description = this.describe;
+
+    safeParse(value: unknown): SafeParseResult<T> {
         try {
-            return [this.parse(value) as T, undefined];
+            return { success: true, data: this.parse(value) as T };
         } catch (error) {
-            return [undefined, error as Error];
+            return { success: false, error: error as Error };
         }
     }
 }
@@ -372,7 +381,7 @@ export class StrV extends TypeV<string> {
         this._defs.minLength = min;
         this.push((val: string) => {
             if (val.length < min) {
-                throw verror(`${val.length} >= ${min}`);
+                throw verror(`String must be at least ${min} characters long`);
             }
             return val;
         });
@@ -1320,8 +1329,8 @@ export class ObjV<S extends Schema = Schema> extends TypeV<InferObject<S>> {
 // --- Array Validator ---
 //
 
-class ArrV extends TypeV<Array<unknown>> {
-    constructor(item?: Validator) {
+export class ArrV<T = unknown> extends TypeV<T[]> {
+    constructor(item?: Validator<T>) {
         super();
         this._inner = item;
         // Add type coercion as the first validator
@@ -1330,9 +1339,9 @@ class ArrV extends TypeV<Array<unknown>> {
                 throw verror(`Expected array, got ${typeof val}`);
             }
             if (this._inner) {
-                return val.map((item) => this._inner!.parse(item));
+                return val.map((item) => this._inner!.parse(item)) as T[];
             }
-            return val;
+            return val as T[];
         });
     }
 
@@ -1349,7 +1358,7 @@ class ArrV extends TypeV<Array<unknown>> {
 
     minLength(min: number): this {
         this._defs.minItems = min;
-        this.push((val: Array<unknown>) => {
+        this.push((val: T[]) => {
             if (val.length < min) {
                 throw verror(`${val.length} >= ${min}`);
             }
@@ -1360,7 +1369,7 @@ class ArrV extends TypeV<Array<unknown>> {
 
     maxLength(max: number): this {
         this._defs.maxItems = max;
-        this.push((val: Array<unknown>) => {
+        this.push((val: T[]) => {
             if (val.length > max) {
                 throw verror(`${val.length} <= ${max}`);
             }
@@ -1370,7 +1379,7 @@ class ArrV extends TypeV<Array<unknown>> {
     }
 
     length(len: number): this {
-        this.push((val: Array<unknown>) => {
+        this.push((val: T[]) => {
             if (val.length !== len) {
                 throw verror(`${val.length} === ${len}`);
             }
@@ -1380,7 +1389,7 @@ class ArrV extends TypeV<Array<unknown>> {
     }
 
     nonempty(): this {
-        this.push((val: Array<unknown>) => {
+        this.push((val: T[]) => {
             if (val.length === 0) {
                 throw verror('Array must not be empty');
             }
@@ -1394,20 +1403,19 @@ class ArrV extends TypeV<Array<unknown>> {
 // --- Set Validator ---
 //
 
-class SetV extends TypeV<Set<unknown>> {
-    constructor(item?: Validator) {
+class SetV<T = unknown> extends TypeV<Set<T>> {
+    constructor(item?: Validator<T>) {
         super();
         this._inner = item;
         // Add type coercion as the first validator
         this.push((val: unknown) => {
             if (val instanceof Set) {
-                return val;
+                return val as Set<T>;
             }
             if (Array.isArray(val)) {
-                const set = new Set<unknown>();
+                const set = new Set<T>();
                 for (const item of val) {
-                    const validated = this._inner ? this._inner.parse(item) : item;
-                    set.add(validated);
+                    set.add(this._inner ? (this._inner.parse(item) as T) : (item as T));
                 }
                 return set;
             }
@@ -1574,23 +1582,23 @@ export function optional<T>(validatorOrSchema?: Validator<T> | Schema): Validato
 //
 
 export type Schema = Record<string, Validator>;
-export const array = (item?: Validator) => new ArrV(item);
+export const array = <T = unknown>(item?: Validator<T>): ArrV<T> => new ArrV<T>(item);
 export const bigint = () => new BigIntV();
 export const boolean = () => new BoolV();
 export const date = () => new DateV();
 export const email = () => new StrV().email();
 export const int = () => new NumV().int();
 export const literal = <T extends string | number | boolean | null | undefined>(value: T) => new LiteralV(value);
-export const map = (value?: Validator) => new MapV(value);
+export const map = <V = unknown>(value?: Validator<V>): Validator<Map<string, V>> => new MapV<V>(value);
 export const nullable = <T>(validator: Validator<T>) => new NullableV(validator);
 export const nullish = <T>(validator: Validator<T>) => new NullishV(validator);
 export const number = () => new NumV();
 export const object = <S extends Schema>(schema?: S) => new ObjV<S>(schema as S);
 export const strictObject = <S extends Schema>(schema?: S) => new ObjV<S>(schema as S).strict();
 export const looseObject = <S extends Schema>(schema?: S) => new ObjV<S>(schema as S).passthrough();
-export const record = <V>(value?: Validator<V>) => new MapV<V>(value);
+export const record = <V = unknown>(value?: Validator<V>): Validator<Map<string, V>> => new MapV<V>(value);
 export const unknown = () => new UnknownV();
-export const set = (item?: Validator) => new SetV(item);
+export const set = <T = unknown>(item?: Validator<T>): Validator<Set<T>> => new SetV<T>(item);
 export const string = () => new StrV();
 export const enumeration = <T extends readonly (string | number | boolean)[]>(values: T) => new EnumV<T[number]>(values);
 

@@ -5,9 +5,9 @@
  */
 
 import type { FastifyInstance, FastifyReply, FastifyRequest, FastifySchema } from 'fastify';
-import { getManager } from '../controller/mcp-config/manager';
-import { registerAllTools } from '../controller/tools';
-import { type JSONRPCMessage, SessionStore } from '../lib/mcp';
+import { getManager } from '../controller/mcp-controller/config';
+import { registerMCPServerTools, registerOwnTools } from '../controller/mcp-controller/register';
+import { type JSONRPCMessage, SessionStore } from '../lib/mcp-server';
 import { Env } from '../util';
 
 /**
@@ -32,7 +32,7 @@ const SERVER_INFO = {
 /**
  * Get or create MCP server for a session
  */
-function getOrCreateSession(sessionId?: string) {
+async function getOrCreateSession(sessionId?: string) {
     if (sessionId) {
         const session = sessions.get(sessionId);
         if (session) {
@@ -42,7 +42,9 @@ function getOrCreateSession(sessionId?: string) {
 
     // Create new session
     const session = sessions.create(SERVER_INFO);
-    registerAllTools(session.server);
+    await registerOwnTools(session.server);
+    await registerMCPServerTools(session.server);
+
     return session;
 }
 
@@ -65,7 +67,7 @@ function getOrCreateSession(sessionId?: string) {
  *   }
  * }
  */
-export async function registerMCPRoute(app: FastifyInstance) {
+export function registerMCP(app: FastifyInstance) {
     // Setup config manager and event listeners
     setupConfigManager();
 
@@ -90,7 +92,7 @@ Use this session ID in POST requests to the same endpoint.`,
             try {
                 // Get or create session
                 const sessionId = request.headers['mcp-session-id'] as string | undefined;
-                const session = getOrCreateSession(sessionId);
+                const session = await getOrCreateSession(sessionId);
 
                 // Setup SSE headers
                 reply.raw.writeHead(200, {
@@ -107,7 +109,7 @@ Use this session ID in POST requests to the same endpoint.`,
                 reply.raw.write(`data: /mcp?sessionId=${session.sessionId}\n\n`);
 
                 // Setup notification sender for this session
-                session.server.setNotificationSender((notification) => {
+                session.server.setEmitter((notification) => {
                     if (!reply.raw.destroyed) {
                         reply.raw.write(`event: notification\n`);
                         reply.raw.write(`data: ${JSON.stringify(notification)}\n\n`);
@@ -176,7 +178,7 @@ Session management:
 
                 // Get or create session
                 const sessionId = request.headers['mcp-session-id'] as string | undefined;
-                const session = getOrCreateSession(sessionId);
+                const session = await getOrCreateSession(sessionId);
 
                 // Validate JSON-RPC structure
                 if (!message || typeof message !== 'object') {
@@ -271,23 +273,23 @@ Session management:
  * Call this once during server initialization
  */
 function setupConfigManager(): void {
-    // Get manager (auto-initializes on first call with file watching)
-    const manager = getManager();
+    // Disable file watching in test environment to prevent hanging
+    const isTest = process.env.NODE_ENV === 'test' || process.env.BUN_ENV === 'test';
+    const watch = !isTest;
 
-    // Listen for config changes and broadcast synchronously
-    manager.on('config:changed', () => {
-        console.log('Config changed - broadcasting to clients');
+    // Get manager (auto-initializes on first call)
+    const manager = getManager(undefined, watch);
 
-        // Broadcast is synchronous - queue the async notification
-        sessions
-            .notifyAllSessions(async (server) => {
-                await server.sendToolListChangedNotification();
-            })
-            .catch((error) => {
-                // Log but don't throw - notifications are best-effort
-                console.error('Failed to broadcast tool list changed notification:', error);
-            });
-    });
-
-    console.log('MCP config manager initialized with file watching');
+    // Listen for config changes and notify all sessions (only if watching)
+    if (watch) {
+        manager.on('config:changed', () => {
+            console.log('Config changed - notifying all sessions');
+            // Each session will reload tools on their next request
+            // For now, just notify clients that tools changed
+            sessions.notifyAllSessions((s) => s.emitToolListChanged());
+        });
+        console.log('MCP config manager initialized with file watching');
+    } else {
+        console.log('MCP config manager initialized (file watching disabled in test mode)');
+    }
 }

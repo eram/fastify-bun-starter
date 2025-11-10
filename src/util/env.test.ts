@@ -99,4 +99,21 @@ describe('env', (t) => {
     test('hasDOM detection', () => {
         equal(Env.hasDOM, false);
     });
+
+    test('runtime detection', () => {
+        equal(Env.runtime, 'bun');
+        ok(typeof Env.runtimeVer === 'number');
+        ok(Env.runtimeVer > 0);
+    });
+
+    test('cluster and worker detection', () => {
+        // In test environment, we're the primary process
+        equal(Env.isPrimary, true);
+        // Since we're not a worker, workerId should be empty
+        equal(Env.workerId, '');
+        // We're on the main thread
+        equal(Env.isMainThread, true);
+        // Thread ID should be a number
+        ok(typeof Env.threadId === 'number');
+    });
 });

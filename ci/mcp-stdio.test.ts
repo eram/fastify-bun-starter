@@ -58,7 +58,7 @@ async function sendStdioRequest(
 
 describe('MCP stdio transport (CI)', () => {
     test('can list tools via stdio', async () => {
-        const mcpProcess = spawn('bun src/cli.ts mcp serve', {
+        const mcpProcess = spawn('bun src/cli/index.ts mcp serve', {
             shell: true,
             stdio: ['pipe', 'pipe', 'pipe'],
         });
@@ -97,7 +97,7 @@ describe('MCP stdio transport (CI)', () => {
     });
 
     test('can call health tool via stdio', async () => {
-        const mcpProcess = spawn('bun src/cli.ts mcp serve', {
+        const mcpProcess = spawn('bun src/cli/index.ts mcp serve', {
             shell: true,
             stdio: ['pipe', 'pipe', 'pipe'],
         });
@@ -136,7 +136,7 @@ describe('MCP stdio transport (CI)', () => {
     });
 
     test('can call format_number tool via stdio', async () => {
-        const mcpProcess = spawn('bun src/cli.ts mcp serve', {
+        const mcpProcess = spawn('bun src/cli/index.ts mcp serve', {
             shell: true,
             stdio: ['pipe', 'pipe', 'pipe'],
         });
@@ -180,7 +180,7 @@ describe('MCP stdio transport (CI)', () => {
     });
 
     test('handles multiple sequential requests via stdio', async () => {
-        const mcpProcess = spawn('bun src/cli.ts mcp serve', {
+        const mcpProcess = spawn('bun src/cli/index.ts mcp serve', {
             shell: true,
             stdio: ['pipe', 'pipe', 'pipe'],
         });

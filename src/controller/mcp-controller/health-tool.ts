@@ -3,10 +3,10 @@
  * Returns server health status
  */
 
-import type { MCPServer, ToolResult } from '../../lib/mcp';
+import type { MCPServer, ToolResult } from '../../lib/mcp-server';
 
 export function registerHealthTool(server: MCPServer): void {
-    server.registerTool(
+    server.register(
         {
             name: 'health',
             description: 'Check server health status',
@@ -31,6 +31,9 @@ export function registerHealthTool(server: MCPServer): void {
                 ],
                 isError: false,
             };
+        },
+        async () => {
+            // No cleanup needed for health tool
         },
     );
 }

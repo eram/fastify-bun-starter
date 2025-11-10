@@ -17,18 +17,6 @@ export function capitalizeAll(str: string): string {
 }
 
 /**
- * A commonly used function from left-pad library
- * Usage: leftpad('foo', 5) // '  foo'
- * @param str - The string to pad.
- * @param newLen - The length to pad to.
- * @param ch - The character to pad with (default: space).
- * @returns The padded string.
- */
-export function leftpad(str: string, newLen: number, ch: string | number = ' ') {
-    return String(str).padStart(newLen, typeof ch === 'number' ? String.fromCharCode(ch) : ch[0]);
-}
-
-/**
  * Escapes enough characters to make an HTML string not render as code should you be
  * forced to innerHTML or otherwise slop it into the document.
  * if DOM exists, we use the lightweight element, template, to provide the function internals.
@@ -40,6 +28,7 @@ export function htmlSpecialChars(str: string): string {
     // This should work in both browser and Node.js environments:
     const doc = (globalThis as { document?: { createElement?: (tag: string) => { textContent?: string; innerHTML?: string } } })
         .document;
+    /* istanbul ignore next -- browser-only code path */
     if (typeof doc?.createElement === 'function') {
         const template = doc.createElement('template');
         template.textContent = str;

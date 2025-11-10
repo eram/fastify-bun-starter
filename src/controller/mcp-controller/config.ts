@@ -11,7 +11,7 @@
 import { EventEmitter } from 'node:events';
 import { readFile, watch } from 'node:fs/promises';
 import * as path from 'node:path';
-import { McpError } from '../../lib/mcp';
+import { McpError } from '../../lib/mcp-server';
 import { access, atExit, copyFile, Env, ErrorEx, mkdir, writeFile } from '../../util';
 import {
     type MCPConfigFile,
@@ -63,11 +63,28 @@ export class MCPConfigManager extends EventEmitter {
             const parsed = JSON.parse(content);
             return mcpConfigFileSchema.parse(parsed);
         } catch (error) {
-            console.error('Failed to parse MCP config:', error);
-            // Return a fresh copy to avoid mutation issues
-            return {
-                mcpServers: new Map(),
-            };
+            // If file exists but is corrupt, try loading backup
+            const [exists] = await access(this._configPath);
+            if (exists) {
+                console.error('Config file is corrupt, attempting to load backup:', error);
+                const backupPath = `${this._configPath}.backup`;
+                const [backupExists] = await access(backupPath);
+                if (backupExists) {
+                    try {
+                        const backupContent = await readFile(backupPath, 'utf-8');
+                        const backupParsed = JSON.parse(backupContent);
+                        const validBackup = mcpConfigFileSchema.parse(backupParsed);
+                        console.log('Successfully loaded config from backup');
+                        return validBackup;
+                    } catch (backupError) {
+                        console.error('Backup file is also corrupt:', backupError);
+                    }
+                }
+            }
+
+            // Return empty config if no valid backup exists
+            console.error('Failed to parse MCP config, returning empty config:', new ErrorEx(error));
+            return { mcpServers: new Map() };
         }
     }
 
@@ -245,7 +262,7 @@ export class MCPConfigManager extends EventEmitter {
                     if (emit) this.emit('config:changed');
                 } catch (_error) {
                     // Watch not supported or other error
-                    console.error('Failed to start config file watcher:', _error);
+                    console.warn('Failed to start config file watcher:', new ErrorEx(_error));
                     this._abort = undefined;
                 }
             })

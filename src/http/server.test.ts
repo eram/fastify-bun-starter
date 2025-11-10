@@ -1,8 +1,14 @@
 import { ok, strictEqual } from 'node:assert/strict';
-import { describe, test } from 'node:test';
-import { createServer, registerAll, startServer } from './server';
+import { afterEach, describe, test } from 'node:test';
+import { createServer, registerRoutes, startServer } from './server';
 
-describe('createServer', () => {
+describe('HTTP Server', () => {
+    afterEach(async () => {
+        // Give time for any servers to fully close and release ports
+        await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    // createServer tests
     test('should create a Fastify instance', () => {
         const server = createServer();
         ok(server);
@@ -103,12 +109,11 @@ describe('createServer', () => {
         const body = JSON.parse(response.body);
         strictEqual(body.data, 'hello');
     });
-});
 
-describe('registerAll', () => {
+    // registerAll tests
     test('should register all routes and return working server', async () => {
         const server = createServer();
-        await registerAll(server);
+        await registerRoutes(server);
 
         // Test that routes actually work
         const healthResponse = await server.inject({
@@ -119,20 +124,20 @@ describe('registerAll', () => {
 
         const docsResponse = await server.inject({
             method: 'GET',
-            url: '/docs',
+            url: '/api/v1/swagger',
         });
         ok(docsResponse.statusCode === 200);
 
         const docsJsonResponse = await server.inject({
             method: 'GET',
-            url: '/docs/json',
+            url: '/api/v1/openapi.json',
         });
         ok(docsJsonResponse.statusCode === 200);
     });
 
     test('should make server ready to handle requests', async () => {
         const server = createServer();
-        await registerAll(server);
+        await registerRoutes(server);
 
         // Server should be ready
         ok(server.printRoutes !== undefined);
@@ -141,14 +146,13 @@ describe('registerAll', () => {
         const routes = server.printRoutes({ commonPrefix: false });
         ok(routes.length > 0);
         ok(routes.includes('/health'));
-        ok(routes.includes('/docs'));
+        ok(routes.includes('/api/v1/swagger'));
     });
-});
 
-describe('startServer', () => {
+    // startServer tests
     test('should start server and listen on configured port', async () => {
         const server = createServer();
-        await registerAll(server);
+        await registerRoutes(server);
 
         // Use a unique port for testing
         const testPort = 13579;
@@ -184,7 +188,7 @@ describe('startServer', () => {
 
     test('should use default port 3000 when PORT not set', async () => {
         const server = createServer();
-        await registerAll(server);
+        await registerRoutes(server);
 
         delete process.env.PORT;
         process.env.HOST = '127.0.0.1';
@@ -212,8 +216,8 @@ describe('startServer', () => {
     test('should handle server startup errors', async () => {
         const server1 = createServer();
         const server2 = createServer();
-        await registerAll(server1);
-        await registerAll(server2);
+        await registerRoutes(server1);
+        await registerRoutes(server2);
 
         const testPort = 13582; // Different port to avoid conflicts
         process.env.PORT = String(testPort);

@@ -1,5 +1,22 @@
 // biome-ignore-all lint/suspicious/noExplicitAny: Generic function types throughout this file need any for flexibility with typed functions
 
+// Prehook: Ensure Bun version < 1.2.22
+
+// NOTE: Testing with node:test on Bun is broken in newer Bun versions.
+// See: https://github.com/oven-sh/bun/issues/5030
+import { Version } from '../src/util/version';
+
+if (typeof Bun !== 'undefined' && Bun.version) {
+    const bunVer = new Version(Bun.version);
+    const minVer = new Version('1.2.22');
+    if (bunVer.gt(minVer)) {
+        // Optionally, throw or warn here
+        console.error('Bun issue #5030 is blocking proper running of node:test');
+        console.error('See: https://github.com/oven-sh/bun/issues/5030');
+        throw new Error('Must use Bun v <= 1.2.22');
+    }
+}
+
 /**
  * Mock utility for Bun tests.
  * This is done to match the mock functionality of Bun with node:test (aka polyfill)

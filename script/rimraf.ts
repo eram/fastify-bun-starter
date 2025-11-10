@@ -8,6 +8,7 @@
 
 import type { RmOptions } from 'node:fs';
 import { promises as fs } from 'node:fs';
+import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
 const isGlobPattern = (str: string): boolean => /[*?{}[\]]/.test(str);
@@ -108,7 +109,6 @@ async function main(): Promise<void> {
 
             // Prevent rimraf outside of workspace (only for non-glob patterns)
             if (!isGlobPattern(pattern)) {
-                const { resolve } = await import('node:path');
                 const absolutePath = resolve(pattern);
                 const cwd = process.cwd();
 

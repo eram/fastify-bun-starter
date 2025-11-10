@@ -4,7 +4,8 @@
  */
 
 import { ErrorEx } from '../../util/error';
-import { McpClient } from './client';
+import type { ToolDefinition, ToolResult } from '../mcp-server';
+import { type MCPClient, validators as v } from './client';
 
 /**
  * Options for StdioClient
@@ -26,34 +27,58 @@ export interface StdioClientOptions {
  * - 'error': When an error occurs (detail: { error: Error })
  * - 'message': For each JSON-RPC message received (detail: message object)
  */
-export class StdioClient extends McpClient {
-    private _process: ReturnType<typeof import('node:child_process').spawn>;
+export class StdioClient extends EventTarget implements MCPClient {
+    private _process?: ReturnType<typeof import('node:child_process').spawn>;
     private _buffer = '';
     private _pendingRequests = new Map<
         number,
-        { resolve: (value: any) => void; reject: (reason: any) => void; timeout: NodeJS.Timeout }
+        { resolve: (value: unknown) => void; reject: (reason: unknown) => void; timeout: NodeJS.Timeout }
     >();
     private _requestId = 1;
     private _options: Required<StdioClientOptions>;
+    private _command: string;
+    private _args: string[];
+    private _closed = false;
+
+    /** Reference count tracking how many tools use this connection */
+    refCount = 0;
 
     constructor(command: string, args: string[] = [], options: StdioClientOptions = {}) {
         super();
 
+        this._command = command;
+        this._args = args;
         this._options = {
             timeout: options.timeout ?? 30000,
             cwd: options.cwd ?? process.cwd(),
         };
+    }
+
+    /**
+     * Connect to the stdio server by spawning the process
+     */
+    async connect(): Promise<void> {
+        if (this._process) {
+            throw new ErrorEx('Process already spawned');
+        }
 
         const { spawn } = require('node:child_process');
 
         // Spawn the MCP server process
-        this._process = spawn(command, args, {
+        this._process = spawn(this._command, this._args, {
             stdio: ['pipe', 'pipe', 'inherit'], // stdin, stdout, stderr
             cwd: this._options.cwd,
         });
 
+        if (!this._process) {
+            throw new ErrorEx('Failed to spawn process');
+        }
+
+        const process = this._process; // Capture for type narrowing
+
         // Handle stdout - parse JSON-RPC messages
-        this._process.stdout?.on('data', (data: Buffer) => {
+        process.stdout?.on('data', (data: Buffer) => {
+            if (!this._process) return;
             this._buffer += data.toString();
 
             // Process complete JSON-RPC messages (one per line in stdio)
@@ -86,12 +111,12 @@ export class StdioClient extends McpClient {
             }
         });
 
-        this._process.on('error', (err) => {
+        process.on('error', (err) => {
             if (this._closed) return;
             this.dispatchEvent(new CustomEvent('error', { detail: { error: err } }));
         });
 
-        this._process.on('exit', (code) => {
+        process.on('exit', (code) => {
             this._closed = true;
             this.dispatchEvent(
                 new CustomEvent('disconnected', {
@@ -100,23 +125,20 @@ export class StdioClient extends McpClient {
             );
 
             // Reject all pending requests
-            for (const [id, pending] of this._pendingRequests.entries()) {
+            for (const [_id, pending] of this._pendingRequests.entries()) {
                 clearTimeout(pending.timeout);
                 pending.reject(new ErrorEx(`Process exited with code ${code}`));
             }
             this._pendingRequests.clear();
         });
 
-        // Emit connected event after a short delay to allow process to initialize
-        setTimeout(() => {
-            if (!this._closed) {
-                this.dispatchEvent(new Event('connected'));
-            }
-        }, 100);
+        setImmediate(() => {
+            this.dispatchEvent(new Event('connected'));
+        });
     }
 
     get connected(): boolean {
-        return !this._closed && this._process.exitCode === null;
+        return !this._closed && this._process !== undefined && this._process.exitCode === null;
     }
 
     /**
@@ -125,9 +147,12 @@ export class StdioClient extends McpClient {
      * @param params - The parameters for the method
      * @returns Promise that resolves with the result
      */
-    sendRequest(method: string, params: any): Promise<any> {
+    sendRequest(method: string, params: unknown): Promise<unknown> {
         if (this._closed) {
             return Promise.reject(new ErrorEx('Client is closed'));
+        }
+        if (!this._process) {
+            return Promise.reject(new ErrorEx('Client not connected - call connect() first'));
         }
 
         return new Promise((resolve, reject) => {
@@ -149,9 +174,29 @@ export class StdioClient extends McpClient {
                 params,
             };
 
-            const line = JSON.stringify(request) + '\n';
-            this._process.stdin?.write(line);
+            const line = `${JSON.stringify(request)}\n`;
+            this._process!.stdin?.write(line);
         });
+    }
+
+    /**
+     * List available tools from the MCP server
+     */
+    async listTools(): Promise<ToolDefinition[]> {
+        const result = (await this.sendRequest('tools/list', undefined)) as { tools: unknown[] };
+        return v.list.parse(result.tools);
+    }
+
+    /**
+     * Call a tool on the MCP server
+     */
+    async callTool(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
+        const result = (await this.sendRequest('tools/call', {
+            name: toolName,
+            arguments: args,
+        })) as unknown;
+
+        return v.result.parse(result);
     }
 
     /**
@@ -161,7 +206,9 @@ export class StdioClient extends McpClient {
         if (this._closed) return;
 
         this._closed = true;
-        this._process.stdin?.end();
-        this._process.kill();
+        if (this._process) {
+            this._process.stdin?.end();
+            this._process.kill();
+        }
     }
 }

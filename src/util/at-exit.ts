@@ -1,3 +1,4 @@
+/* istanbul ignore file */
 //
 // this lib implements the best practices for handling termination on nodejs
 // see https://blog.heroku.com/best-practices-nodejs-errors

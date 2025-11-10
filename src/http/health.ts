@@ -6,7 +6,7 @@ import { z } from '../lib/validator';
  * Register health check endpoint
  * Returns status, timestamp, and worker count (if in cluster mode)
  */
-export async function registerHealthRoute(app: FastifyInstance) {
+export function registerHealth(app: FastifyInstance) {
     app.get(
         '/health',
         {

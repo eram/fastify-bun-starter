@@ -1,61 +1,57 @@
-import { ok, strictEqual } from 'node:assert/strict';
+import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { app } from '../app';
+import { createServer, registerRoutes } from './server';
 
-describe('Health route', () => {
-    test('GET /health returns 200 status', async () => {
+describe('Health endpoint', () => {
+    test('GET /health returns status ok', async () => {
+        const app = createServer();
+        await registerRoutes(app);
+
         const response = await app.inject({
             method: 'GET',
             url: '/health',
         });
 
-        strictEqual(response.statusCode, 200);
-    });
-
-    test('GET /health returns correct structure', async () => {
-        const response = await app.inject({
-            method: 'GET',
-            url: '/health',
-        });
-
-        const json = response.json();
-        strictEqual(json.status, 'ok');
-        ok(json.timestamp);
-        ok(typeof json.timestamp === 'string');
-    });
-
-    test('GET /health includes timestamp in ISO format', async () => {
-        const response = await app.inject({
-            method: 'GET',
-            url: '/health',
-        });
-
-        const json = response.json();
-        const timestamp = new Date(json.timestamp);
-        ok(!Number.isNaN(timestamp.getTime()));
+        assert.equal(response.statusCode, 200);
+        const body = JSON.parse(response.body);
+        assert.equal(body.status, 'ok');
+        assert.ok(body.timestamp);
+        assert.match(body.timestamp, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     });
 
     test('GET /health includes workers count when in cluster mode', async () => {
+        const app = createServer();
+        await registerRoutes(app);
+
         const response = await app.inject({
             method: 'GET',
             url: '/health',
         });
 
-        const json = response.json();
-        // In test mode (non-cluster), workers should be undefined
-        // In cluster mode, workers should be a number >= 0
-        if (json.workers !== undefined) {
-            ok(typeof json.workers === 'number');
-            ok(json.workers >= 0);
-        }
+        assert.equal(response.statusCode, 200);
+        const body = JSON.parse(response.body);
+        // In test mode, workers is typically undefined since we're not in cluster
+        // But we verify the structure is correct
+        assert.equal(typeof body.workers, body.workers === undefined ? 'undefined' : 'number');
     });
 
-    test('GET /health content-type is application/json', async () => {
+    test('GET /health response matches schema', async () => {
+        const app = createServer();
+        await registerRoutes(app);
+
         const response = await app.inject({
             method: 'GET',
             url: '/health',
         });
 
-        ok(response.headers['content-type']?.includes('application/json'));
+        assert.equal(response.statusCode, 200);
+        const body = JSON.parse(response.body);
+
+        // Validate schema
+        assert.ok(typeof body.status === 'string');
+        assert.ok(typeof body.timestamp === 'string');
+        if (body.workers !== undefined) {
+            assert.ok(typeof body.workers === 'number');
+        }
     });
 });

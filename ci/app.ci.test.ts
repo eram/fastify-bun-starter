@@ -9,7 +9,7 @@ import { describe, test } from 'node:test';
  * Helper function to run the app and capture output
  */
 async function runApp(args = ''): Promise<string> {
-    const cmd = args ? `bun src/cli.ts ${args}` : 'bun src/cli.ts';
+    const cmd = args ? `bun src/cli/index.ts ${args}` : 'bun src/cli/index.ts';
 
     return new Promise((resolve, reject) => {
         const proc = spawn(cmd, { shell: true });

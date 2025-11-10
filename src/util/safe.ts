@@ -2,7 +2,7 @@
 import * as childProcess from 'node:child_process';
 import * as dns from 'node:dns';
 import * as fs from 'node:fs';
-import { FileHandle, type FileReadOptions, type FileReadResult } from 'node:fs/promises';
+import { FileHandle, type FileReadOptions, type FileReadResult, glob } from 'node:fs/promises';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
 
@@ -125,7 +125,7 @@ async function rimraf(
             // use glob to find matching files. Do not fail if none exist.
             // Direct path: fail if does not exist
             if (/[*?[{]/.test(p)) {
-                for await (const file of fs.promises.glob(p)) {
+                for await (const file of glob(p)) {
                     matches.push(file);
                 }
             } else {
@@ -524,6 +524,8 @@ interface SpawnSync {
 
 export const spawnSync = ((...args: Parameters<typeof childProcess.spawnSync>) =>
     safeSync(() => childProcess.spawnSync(...args))) as SpawnSync;
+
+export { glob };
 
 // ============================================================================
 // Re-export all major interfaces/types from fs and fs.promises to make

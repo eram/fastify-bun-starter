@@ -36,6 +36,30 @@
             "watchMode": false,
             "smartStep": true,
             "skipFiles": ["<node_internals>/**"]
+        },
+        {
+            "name": "Debug MCP CLI: list",
+            "type": "bun",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/cli.ts",
+            "args": ["mcp", "list"],
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "watchMode": false,
+            "smartStep": true,
+            "skipFiles": ["<node_internals>/**"]
+        },
+        {
+            "name": "Debug MCP CLI: add",
+            "type": "bun",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/cli.ts",
+            "args": ["mcp", "add"],
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "watchMode": false,
+            "smartStep": true,
+            "skipFiles": ["<node_internals>/**"]
         }
     ]
 }

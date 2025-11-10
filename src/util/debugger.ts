@@ -6,7 +6,7 @@ import inspector from 'node:inspector';
  * @returns {boolean} True if the process is running under a debugger.
  */
 let _attached: boolean | undefined;
-export function isDebuggerAttached() {
+export function isDebugging() {
     return (
         _attached ??
         (_attached = typeof process.debugPort === 'number' && process.debugPort !== 0 && typeof inspector.url() === 'string')

@@ -9,6 +9,7 @@
 
 import type { Schema, Validator, ValidatorDef } from './validator';
 import * as v from './validator';
+import { ArrV } from './validator';
 
 // ============================================================================
 // Types
@@ -471,7 +472,7 @@ function parseObjectSchema(schema: JsonSchema, opts: Required<FromJsonSchemaOpti
  * Parse array schema
  */
 function parseArraySchema(schema: JsonSchema, opts: Required<FromJsonSchemaOptions>): Validator {
-    let validator = v.array();
+    let validator: Validator = v.array();
 
     // Handle items schema
     if (schema.items) {
@@ -485,10 +486,10 @@ function parseArraySchema(schema: JsonSchema, opts: Required<FromJsonSchemaOptio
 
     // Add constraints (arrays use minLength/maxLength, not min/max)
     if (schema.minItems !== undefined) {
-        validator = validator.minLength(schema.minItems);
+        validator = (validator as ArrV).minLength(schema.minItems);
     }
     if (schema.maxItems !== undefined) {
-        validator = validator.maxLength(schema.maxItems);
+        validator = (validator as ArrV).maxLength(schema.maxItems);
     }
 
     return validator;

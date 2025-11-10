@@ -5,20 +5,16 @@
  * It includes type providers, schema compilers, and type inference utilities.
  * The lib replaces the usage of several common utility npm packages that carry with them
  * unwanted dependencies and bloat:
- * 1. zod - heavy dependency for schema validation
- * 2. typebox - heavy dependency for schema validation
- * 3. @fastify/type-provider-typebox - heavy dependency for schema validation
- * 4. zod-to-json-schema - heavy dependency for schema conversion
- * 5. json-schema-to-zod -https://www.npmjs.com/package/json-schema-to-zod
+ * 1. zod - https://github.com/colinhacks/zod
+ * 2. typebox - https://github.com/sinclairzx81/typebox
+ * 3. @fastify/type-provider-typebox - https://www.npmjs.com/package/@fastify/type-provider-typebox
+ * 4. zod-to-json-schema - https://www.npmjs.com/package/zod-to-json-schema
+ * 5. json-schema-to-zod - https://www.npmjs.com/package/json-schema-to-zod
  *
  */
-export * from './provider';
-export * from './schema';
-export * from './validator';
 
 import type { Infer } from './provider';
 import { fromJsonSchema, toJsonSchema } from './schema';
-// Re-export core validator functions and types for direct access
 import {
     array,
     base64,
@@ -59,6 +55,7 @@ import {
     optional,
     parseSchema,
     record,
+    type Schema,
     type StrV,
     safeParse,
     set,
@@ -74,20 +71,53 @@ import {
     voidVal,
 } from './validator';
 
+export * from './provider';
+export * from './schema';
+export * from './validator';
+
+//
 // Zod-like API export for backwards compatibility
+//
+
+export namespace z {
+    export type ZodType<T = unknown> = TypeV<T>;
+    export type ZodObject = ObjV;
+    export type ZodString = StrV;
+    // biome-ignore lint/style/useNamingConvention: Zod compatibility
+    export type infer<T> = Infer<T>;
+
+    // SafeParse result types
+    export type ZodSafeParseSuccess<T> = { success: true; data: T; error?: never };
+    export type ZodSafeParseError = { success: false; data?: never; error: Error };
+    export type ZodSafeParseResult<T> = ZodSafeParseSuccess<T> | ZodSafeParseError;
+}
+
+function zodSafeParse<T>(validator: TypeV<T>, value: unknown): z.ZodSafeParseResult<T>;
+function zodSafeParse<S extends Schema>(validator: S, value: unknown): z.ZodSafeParseResult<Infer<S>>;
+function zodSafeParse<T>(validator: Schema | TypeV<T>, value: unknown): z.ZodSafeParseResult<T> {
+    const [data, error] = safeParse<T>(validator, value);
+    if (error) {
+        return { success: false, error };
+    }
+    return { success: true, data: data as T };
+}
+
 export const z = {
-    // Primitive types
+    // Primitives
     string,
     number,
     boolean,
     bigint,
     date,
-    undefined: undefinedVal,
-    null: nullVal,
-    nan,
-    void: voidVal,
 
-    // Complex types
+    // nulls
+    nan,
+    null: nullVal,
+    undefined: undefinedVal,
+    void: voidVal,
+    nanoid,
+
+    // Arrays & Objects
     array,
     object,
     strictObject,
@@ -116,7 +146,6 @@ export const z = {
     base64url,
     hex,
     jwt,
-    nanoid,
     cuid,
     cuid2,
     ulid,
@@ -134,17 +163,9 @@ export const z = {
 
     // Utilities
     parseSchema,
-    safeParse, // NB!! different return type than zod's
+    safeParse: zodSafeParse, // Zod-compatible return type
 
     // JSON Schema conversion (for zod compatibility)
     zodToJsonSchema: toJsonSchema,
     jsonSchemaToZod: fromJsonSchema,
 };
-
-export namespace z {
-    export type ZodType<T = unknown> = TypeV<T>;
-    export type ZodObject = ObjV;
-    export type ZodString = StrV;
-    // biome-ignore lint/style/useNamingConvention: Zod compatibility
-    export type infer<T> = Infer<T>;
-}

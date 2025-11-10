@@ -16,7 +16,7 @@ describe('MCP Server - Progress Notifications', () => {
         const server = new MCPServer({ name: 'test-server', version: '1.0.0' });
         const notifications: JSONRPCNotification[] = [];
 
-        server.setNotificationSender((notification) => {
+        server.setEmitter((notification) => {
             notifications.push(notification);
         });
 
@@ -42,7 +42,7 @@ describe('MCP Server - Progress Notifications', () => {
         const server = new MCPServer({ name: 'test-server', version: '1.0.0' });
         const notifications: JSONRPCNotification[] = [];
 
-        server.setNotificationSender((notification) => {
+        server.setEmitter((notification) => {
             notifications.push(notification);
         });
 
@@ -60,7 +60,7 @@ describe('MCP Server - Cancellation', () => {
     test('should track pending requests', async () => {
         const server = new MCPServer({ name: 'test-server', version: '1.0.0' });
 
-        server.registerTool(
+        server.register(
             {
                 name: 'slow-tool',
                 description: 'A slow tool',
@@ -71,6 +71,7 @@ describe('MCP Server - Cancellation', () => {
                 await new Promise((resolve) => setTimeout(resolve, 100));
                 return { content: [{ type: 'text', text: 'Done' }], isError: false };
             },
+            async () => {},
         );
 
         // Start handling a request (doesn't wait for completion)
@@ -82,18 +83,18 @@ describe('MCP Server - Cancellation', () => {
         });
 
         // Request should be tracked as pending initially
-        ok(server.isRequestPending(1));
+        ok(server.isPending(1));
 
         await responsePromise;
 
         // After completion, should no longer be pending
-        ok(!server.isRequestPending(1));
+        ok(!server.isPending(1));
     });
 
     test('should handle cancellation notification', async () => {
         const server = new MCPServer({ name: 'test-server', version: '1.0.0' });
 
-        server.registerTool(
+        server.register(
             {
                 name: 'test-tool',
                 description: 'A test tool',
@@ -102,6 +103,7 @@ describe('MCP Server - Cancellation', () => {
             async () => {
                 return { content: [{ type: 'text', text: 'Result' }], isError: false };
             },
+            async () => {},
         );
 
         // Start a request
@@ -112,7 +114,7 @@ describe('MCP Server - Cancellation', () => {
             params: { name: 'test-tool' },
         });
 
-        ok(server.isRequestPending(100));
+        ok(server.isPending(100));
 
         // Send cancellation notification
         await server.handleMessage({
@@ -122,7 +124,7 @@ describe('MCP Server - Cancellation', () => {
         });
 
         // Request should no longer be pending
-        ok(!server.isRequestPending(100));
+        ok(!server.isPending(100));
 
         await responsePromise;
     });
@@ -131,7 +133,7 @@ describe('MCP Server - Cancellation', () => {
         const server = new MCPServer({ name: 'test-server', version: '1.0.0' });
         const notifications: JSONRPCNotification[] = [];
 
-        server.setNotificationSender((notification) => {
+        server.setEmitter((notification) => {
             notifications.push(notification);
         });
 
@@ -150,12 +152,12 @@ describe('MCP Server - List Change Notifications', () => {
         const server = new MCPServer({ name: 'test-server', version: '1.0.0' });
         const notifications: JSONRPCNotification[] = [];
 
-        server.setNotificationSender((notification) => {
+        server.setEmitter((notification) => {
             notifications.push(notification);
         });
 
         // Register a tool
-        server.registerTool(
+        server.register(
             {
                 name: 'test-tool',
                 description: 'A test tool',
@@ -164,10 +166,11 @@ describe('MCP Server - List Change Notifications', () => {
             async () => {
                 return { content: [{ type: 'text', text: 'Result' }], isError: false };
             },
+            async () => {},
         );
 
         // Unregister the tool
-        const deleted = server.unregisterTool('test-tool');
+        const deleted = server.unregister('test-tool');
 
         ok(deleted);
         strictEqual(notifications.length, 1);
@@ -179,11 +182,11 @@ describe('MCP Server - List Change Notifications', () => {
         const server = new MCPServer({ name: 'test-server', version: '1.0.0' });
         const notifications: JSONRPCNotification[] = [];
 
-        server.setNotificationSender((notification) => {
+        server.setEmitter((notification) => {
             notifications.push(notification);
         });
 
-        const deleted = server.unregisterTool('non-existent');
+        const deleted = server.unregister('non-existent');
 
         ok(!deleted);
         strictEqual(notifications.length, 0);
@@ -215,7 +218,7 @@ describe('MCP Server - Roots Support', () => {
         const server = new MCPServer({ name: 'test-server', version: '1.0.0' });
         const notifications: JSONRPCNotification[] = [];
 
-        server.setNotificationSender((notification) => {
+        server.setEmitter((notification) => {
             notifications.push(notification);
         });
 
@@ -233,7 +236,7 @@ describe('MCP Server - Roots Support', () => {
         const testRoots = [{ uri: 'file:///project1', name: 'Project 1' }];
         server.setRoots(testRoots);
 
-        server.setNotificationSender((notification) => {
+        server.setEmitter((notification) => {
             notifications.push(notification);
         });
 
@@ -293,7 +296,7 @@ describe('MCP Server - Progress Token in Tool Calls', () => {
         const server = new MCPServer({ name: 'test-server', version: '1.0.0' });
         let receivedToken: string | number | undefined;
 
-        server.registerTool(
+        server.register(
             {
                 name: 'progress-tool',
                 description: 'A tool with progress',
@@ -303,6 +306,7 @@ describe('MCP Server - Progress Token in Tool Calls', () => {
                 receivedToken = progressToken;
                 return { content: [{ type: 'text', text: 'Done' }], isError: false };
             },
+            async () => {},
         );
 
         await server.handleMessage({
@@ -323,7 +327,7 @@ describe('MCP Server - Progress Token in Tool Calls', () => {
         const server = new MCPServer({ name: 'test-server', version: '1.0.0' });
         let receivedToken: string | number | undefined = 'initial';
 
-        server.registerTool(
+        server.register(
             {
                 name: 'no-progress-tool',
                 description: 'A tool without progress',
@@ -333,6 +337,7 @@ describe('MCP Server - Progress Token in Tool Calls', () => {
                 receivedToken = progressToken;
                 return { content: [{ type: 'text', text: 'Done' }], isError: false };
             },
+            async () => {},
         );
 
         await server.handleMessage({
@@ -403,5 +408,49 @@ describe('McpError', () => {
         ok(json.length > 0);
         equal(err.message, 'Serialization test');
         equal(err.name, 'McpError');
+    });
+});
+
+describe('MCP Server - Tool Query', () => {
+    test('should get tools by prefix', async () => {
+        const server = new MCPServer({ name: 'test-server', version: '1.0.0' });
+
+        // Register some tools with prefixes
+        server.register(
+            { name: 'serverA:tool1', description: 'Tool 1 from Server A', inputSchema: { type: 'object' } },
+            async () => ({ content: [] }),
+            async () => {},
+        );
+
+        server.register(
+            { name: 'serverA:tool2', description: 'Tool 2 from Server A', inputSchema: { type: 'object' } },
+            async () => ({ content: [] }),
+            async () => {},
+        );
+
+        server.register(
+            { name: 'serverB:tool1', description: 'Tool 1 from Server B', inputSchema: { type: 'object' } },
+            async () => ({ content: [] }),
+            async () => {},
+        );
+
+        server.register(
+            { name: 'local-tool', description: 'Local tool', inputSchema: { type: 'object' } },
+            async () => ({ content: [] }),
+            async () => {},
+        );
+
+        // Get tools by prefix
+        const serverATools = server.getToolsByPrefix('serverA');
+        const serverBTools = server.getToolsByPrefix('serverB');
+        const serverCTools = server.getToolsByPrefix('serverC');
+
+        strictEqual(serverATools.length, 2);
+        strictEqual(serverBTools.length, 1);
+        strictEqual(serverCTools.length, 0);
+
+        strictEqual(serverATools[0].name, 'serverA:tool1');
+        strictEqual(serverATools[1].name, 'serverA:tool2');
+        strictEqual(serverBTools[0].name, 'serverB:tool1');
     });
 });

@@ -3,7 +3,7 @@
  * Formats numbers according to locale (IETF BCP 47 format)
  */
 
-import type { MCPServer, ToolResult } from '../../lib/mcp';
+import type { MCPServer, ToolResult } from '../../lib/mcp-server';
 
 export function registerFormatNumberTool(server: MCPServer): void {
     const properties = new Map<string, unknown>();
@@ -16,7 +16,7 @@ export function registerFormatNumberTool(server: MCPServer): void {
         description: 'Locale in IETF BCP 47 format (e.g., en-US, de-DE, fr-FR)',
     });
 
-    server.registerTool(
+    server.register(
         {
             name: 'format_number',
             description: 'Format a number according to a specific locale (IETF BCP 47 format like en-US, de-DE)',
@@ -100,6 +100,9 @@ export function registerFormatNumberTool(server: MCPServer): void {
                     isError: true,
                 };
             }
+        },
+        async () => {
+            // No cleanup needed for format_number tool
         },
     );
 }

@@ -114,6 +114,7 @@ export async function system(
         rl.close();
     }
 
+    /* istanbul ignore next -- defensive error handling for spawn failures */
     child.addListener('error', (err) => {
         flush();
         reject(err.message);

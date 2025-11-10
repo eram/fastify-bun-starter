@@ -1,7 +1,7 @@
 import { ok, strictEqual } from 'node:assert/strict';
 import { afterEach, beforeEach, describe, test } from 'node:test';
 import type { FastifyInstance } from 'fastify';
-import { createServer, registerAll } from './server';
+import { createServer, registerRoutes } from './server';
 
 describe('HTTP Security Middleware', () => {
     let app: FastifyInstance;
@@ -19,7 +19,7 @@ describe('HTTP Security Middleware', () => {
 
         // Create and start server
         app = createServer();
-        await registerAll(app);
+        await registerRoutes(app);
         await app.listen({ port: testPort, host: '127.0.0.1' });
     });
 
@@ -147,7 +147,7 @@ describe('HTTP Security Middleware', () => {
     });
 
     test('should handle valid requests within size limits', async () => {
-        const response = await fetch(`${baseUrl}/hello`, {
+        const response = await fetch(`${baseUrl}/api/v1/hello`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -186,7 +186,7 @@ describe('DNS Rebinding Protection', () => {
         process.env.PORT = String(testPort);
 
         app = createServer();
-        await registerAll(app);
+        await registerRoutes(app);
         await app.listen({ port: testPort, host: '127.0.0.1' });
 
         // Request with malicious Host header
@@ -207,7 +207,7 @@ describe('DNS Rebinding Protection', () => {
         process.env.PORT = String(testPort);
 
         app = createServer();
-        await registerAll(app);
+        await registerRoutes(app);
         await app.listen({ port: testPort, host: '127.0.0.1' });
 
         // Request with allowed Host header
@@ -225,7 +225,7 @@ describe('DNS Rebinding Protection', () => {
         process.env.PORT = String(testPort);
 
         app = createServer();
-        await registerAll(app);
+        await registerRoutes(app);
         await app.listen({ port: testPort, host: '127.0.0.1' });
 
         // Request with any Host header should be allowed when protection is disabled
@@ -243,7 +243,7 @@ describe('DNS Rebinding Protection', () => {
         process.env.PORT = String(testPort);
 
         app = createServer();
-        await registerAll(app);
+        await registerRoutes(app);
         await app.listen({ port: testPort, host: '127.0.0.1' });
 
         // Test each allowed host

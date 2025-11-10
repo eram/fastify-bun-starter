@@ -98,7 +98,7 @@ describe.skip('MCP HTTP-SSE transport (CI)', () => {
 
     test('can call health tool via SSE', async () => {
         const port = 13591;
-        const serverProcess = spawn(`bun run src/cli.ts server`, {
+        const serverProcess = spawn(`bun run src/cli/index.ts server`, {
             shell: true,
             env: { ...process.env, PORT: String(port) },
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -150,7 +150,7 @@ describe.skip('MCP HTTP-SSE transport (CI)', () => {
 
     test('can call format_number tool via SSE', async () => {
         const port = 13592;
-        const serverProcess = spawn(`bun run src/cli.ts server`, {
+        const serverProcess = spawn(`bun run src/cli/index.ts server`, {
             shell: true,
             env: { ...process.env, PORT: String(port) },
             stdio: ['ignore', 'pipe', 'pipe'],

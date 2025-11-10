@@ -79,7 +79,8 @@ const processOutput = (data: string, stream: NodeJS.WriteStream): void => {
 
     for (const line of lines) {
         if (shouldShow(line)) {
-            stream.write(`${line}\n`);
+            // Always reset ANSI codes after each line to prevent color bleeding
+            stream.write(`${line}\x1b[0m\n`);
         }
     }
 };
@@ -87,7 +88,7 @@ const processOutput = (data: string, stream: NodeJS.WriteStream): void => {
 // Flush remaining buffer
 const flushBuffer = (stream: NodeJS.WriteStream): void => {
     if (buffer && shouldShow(buffer)) {
-        stream.write(`${buffer}\n`);
+        stream.write(`${buffer}\x1b[0m\n`);
     }
 };
 

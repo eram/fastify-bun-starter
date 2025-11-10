@@ -17,7 +17,7 @@ const TEST_CONFIG_PATH = path.resolve(process.cwd(), 'var', '.mcp.cli-test.json'
  */
 function runCLI(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
     return new Promise((resolve) => {
-        const child = spawn('bun', ['src/cli.ts', 'mcp', ...args], {
+        const child = spawn('bun', ['src/cli/index.ts', 'mcp', ...args], {
             env: {
                 ...process.env,
                 MCP_CONFIG_FILE: TEST_CONFIG_PATH,

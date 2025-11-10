@@ -89,9 +89,9 @@ function isLocaleSupported(locale: string): boolean {
  *   "availableLocales": ["en-US", "de-DE", ...]
  * }
  */
-export async function registerHelloRoute(app: FastifyInstance) {
+export function registerHello(app: FastifyInstance) {
     app.post<WithBody<NumberFormatRequest>>(
-        '/hello',
+        '/api/v1/hello',
         {
             schema: {
                 body: numberFormatSchema,

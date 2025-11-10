@@ -156,14 +156,14 @@ describe('SessionStore', () => {
         strictEqual(store.size, 2, 'All sessions should remain');
     });
 
-    test('notifyAllSessions() calls function for each session', async () => {
+    test('notifyAllSessions() calls function for each session', () => {
         const session1 = store.create({ name: 'test1', version: '1.0.0' });
         const session2 = store.create({ name: 'test2', version: '1.0.0' });
         const session3 = store.create({ name: 'test3', version: '1.0.0' });
 
         const notifiedServers: MCPServer[] = [];
 
-        await store.notifyAllSessions(async (server) => {
+        store.notifyAllSessions((server) => {
             notifiedServers.push(server);
         });
 
@@ -173,7 +173,7 @@ describe('SessionStore', () => {
         ok(notifiedServers.includes(session3.server), 'Should include session3 server');
     });
 
-    test('notifyAllSessions() handles errors gracefully', async () => {
+    test('notifyAllSessions() handles errors gracefully', () => {
         store.create({ name: 'test1', version: '1.0.0' });
         store.create({ name: 'test2', version: '1.0.0' });
         store.create({ name: 'test3', version: '1.0.0' });
@@ -181,7 +181,7 @@ describe('SessionStore', () => {
         let callCount = 0;
 
         // Should not throw even if notification function fails
-        await store.notifyAllSessions(async (_server) => {
+        store.notifyAllSessions((_server) => {
             callCount++;
             if (callCount === 2) {
                 throw new Error('Notification failed');
@@ -191,10 +191,10 @@ describe('SessionStore', () => {
         strictEqual(callCount, 3, 'Should call function for all sessions despite error');
     });
 
-    test('notifyAllSessions() does nothing when no sessions exist', async () => {
+    test('notifyAllSessions() does nothing when no sessions exist', () => {
         let called = false;
 
-        await store.notifyAllSessions(async () => {
+        store.notifyAllSessions(() => {
             called = true;
         });
 
@@ -212,5 +212,40 @@ describe('SessionStore', () => {
 
         const ids = new Set(sessions.map((s) => s.sessionId));
         strictEqual(ids.size, 100, 'All 100 session IDs should be unique');
+    });
+    test('createWithSharedServer() creates session with shared server instance', () => {
+        // Create a mock server
+        const mockServer = { name: 'shared-server', version: '1.0.0' } as MCPServer;
+
+        const session1 = store.createWithSharedServer(mockServer);
+        const session2 = store.createWithSharedServer(mockServer);
+
+        ok(session1.sessionId, 'Session 1 should have an ID');
+        ok(session2.sessionId, 'Session 2 should have an ID');
+        ok(session1.sessionId !== session2.sessionId, 'Session IDs should be unique');
+
+        // Both sessions should share the same server instance
+        strictEqual(session1.server, mockServer, 'Session 1 should use the shared server');
+        strictEqual(session2.server, mockServer, 'Session 2 should use the shared server');
+        strictEqual(session1.server, session2.server, 'Both sessions should share the same server instance');
+    });
+
+    test('createWithSharedServer() accepts custom session ID', () => {
+        const mockServer = { name: 'test', version: '1.0.0' } as MCPServer;
+        const customId = 'custom-session-123';
+
+        const session = store.createWithSharedServer(mockServer, customId);
+
+        strictEqual(session.sessionId, customId, 'Should use custom session ID');
+        strictEqual(store.get(customId)?.sessionId, customId, 'Should be retrievable by custom ID');
+    });
+
+    test('createWithSharedServer() accepts metadata', () => {
+        const mockServer = { name: 'test', version: '1.0.0' } as MCPServer;
+        const metadata = { userId: '456', context: 'test' };
+
+        const session = store.createWithSharedServer(mockServer, undefined, metadata);
+
+        deepStrictEqual(session.metadata, metadata, 'Should store metadata');
     });
 });

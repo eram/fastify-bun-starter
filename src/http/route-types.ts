@@ -1,3 +1,4 @@
+/* istanbul ignore file */
 /**
  * Fastify route type helpers
  *

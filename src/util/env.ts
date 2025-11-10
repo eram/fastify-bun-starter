@@ -97,10 +97,16 @@ export class Env {
             const parsed = parseEnv(buff.toString('utf8'));
             if (parsed) {
                 Object.assign(env, parsed);
-                console.log(`Loaded .env file: ${filename} with ${Object.keys(parsed).length} vars`);
+                // Suppress message if --json or --help flag is present (for clean output)
+                if (!process.argv.includes('--json') && !process.argv.includes('--help') && !process.argv.includes('-h')) {
+                    console.log(`Loaded .env file: ${filename} with ${Object.keys(parsed).length} vars`);
+                }
             }
         } catch (_err) {
-            console.warn(`Failed to load .env file: ${filename}`);
+            // Only warn if not in JSON or help mode
+            if (!process.argv.includes('--json') && !process.argv.includes('--help') && !process.argv.includes('-h')) {
+                console.warn(`Failed to load .env file: ${filename}`);
+            }
         }
 
         // must have env vars

@@ -74,7 +74,7 @@ try {
     } else {
         // Use npm version to bump package.json, create commit and tag
         execSync(`npm version ${bumpType} -m "chore: release v%s"`);
-        const pkg = JSON.parse(fs.readFileSync(pkgPath));
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
         newVersion = pkg.version;
     }
 
@@ -124,10 +124,10 @@ try {
     } else {
         log(`CI build - no git tag created.`);
     }
+
+    // Output new version for Docker build (do not write to package.json)
+    log(`Bumped version: ${oldVersion} -> ${newVersion}`);
 } catch (e) {
     const err = e as Error;
     error(err.message);
 }
-
-// Output new version for Docker build (do not write to package.json)
-log(`Bumped version: ${oldVersion} -> ${newVersion}`);

@@ -1,14 +1,14 @@
 {
-  "name": "create-fastify-bun-starter",
+  "name": "mcp-agg",
   "version": "0.3.0",
-  "description": "Scaffold a complete Fastify + Bun environment with minimal dependencies! TypeScript-only, REST/Swagger, CLI support, Wolfi-Docker, cluster, testing, benchmarks and more...",
+  "description": "MCP Aggregator - Aggregate multiple Model Context Protocol servers into a single endpoint with unified tool discovery and execution",
   "type": "module",
   "scripts": {
     "start": "bun src/app.ts",
     "bench:json": "bun --expose-gc script/bench_json_parse.ts",
     "bench:logger": "bun --expose-gc script/bench_logger.js",
     "bench:validator": "bun --expose-gc script/bench_validator.js",
-    "build": "docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target prod -t fastify-bun-starter:latest . && docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target scan . && docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target logs --output type=local,dest=./build-logs .",
+    "build": "docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target prod -t mcp-agg:latest . && docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target scan . && docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target logs --output type=local,dest=./build-logs .",
     "build:grype": "docker build --build-arg \"BUILD_TS=$(bun -e 'console.log(new Date().toISOString());')\" --target scan .",
     "clean": "bun script/rimraf.ts -- -q dist build build-logs coverage node_modules .cache .vitest *.log *.cpuprofile",
     "cluster": "bun src/cluster.ts",
@@ -16,9 +16,10 @@
     "kill": "taskkill /F /IM bun.exe",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "mcp": "bun src/cli.ts mcp",
+    "mcp": "bun src/cli/index.ts mcp",
     "publish:npm": "npm login && npm publish --access public",
     "release": "bun script/release.ts",
+    "rimraf": "bun script/rimraf.ts",
     "test": "bun run lint && bun script/run-tests.ts && bun script/coverage-report.ts",
     "test:verbose": "bun run lint && tsc -p ./tsconfig.verbose.json && bun script/run-tests.ts --verbose && bun script/coverage-report.ts",
     "test:ci": "bun test ci",
@@ -28,6 +29,7 @@
     "@fastify/cors": "^11.0.0",
     "@fastify/helmet": "^12.0.0",
     "@fastify/rate-limit": "^10.3.0",
+    "@fastify/static": "^8.3.0",
     "@types/node": "^24.9.2",
     "fastify": "^5.2.0",
     "typescript": "^5.9.3"
@@ -42,41 +44,40 @@
     "bun": ">=1.3.0"
   },
   "bin": {
-    "create-fastify-bun-starter": "script/create.js"
+    "mcp-agg": "script/bin.js"
   },
   "files": [
-    "script/create.js",
+    "script/bin.js",
+    "src/cli/**",
+    "src/controller/mcp-controller/**",
+    "src/lib/**",
+    "src/util/**",
     "package.json",
     "README.md",
     "LICENSE"
   ],
   "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "aggregator",
+    "tools",
+    "ai",
+    "llm",
     "fastify",
     "bun",
     "typescript",
-    "starter",
-    "template",
-    "framework",
     "rest-api",
-    "swagger",
-    "cli",
-    "validation",
-    "scaffold",
-    "generator",
-    "cluster",
-    "performance",
-    "benchmarks",
-    "docker"
+    "cli"
   ],
   "author": "eram@weblegions.com",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/eram/fastify-bun-starter.git"
+    "url": "https://github.com/eram/mcp-agg.git"
   },
   "bugs": {
-    "url": "https://github.com/eram/fastify-bun-starter/issues"
+    "url": "https://github.com/eram/mcp-agg/issues"
   },
-  "homepage": "https://github.com/eram/fastify-bun-starter#readme",
+  "homepage": "https://github.com/eram/mcp-agg#readme",
   "private": false
 }

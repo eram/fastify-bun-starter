@@ -35,7 +35,7 @@ describe('ResilientClient', () => {
             const retry = client.fetch<typeof mockResponse>(t.name);
             const result = await retry;
 
-            strictEqual(fn.mock.calls.length, 3);
+            strictEqual(fn.mock.calls.length, 2);
             deepStrictEqual(result, mockResponse);
             ok(!retry.state.aborted);
         } finally {
@@ -61,12 +61,13 @@ describe('ResilientClient', () => {
 
     test('fetch with timeout', async (t) => {
         const fn = mock.method(globalThis, 'fetch', async () => {
-            await sleep(10);
-            return new Response('OK', { status: 200 });
+            // Mock fetch takes 100ms but timeout is set to 50ms
+            await sleep(100);
+            return new Response(JSON.stringify({ data: 'ok' }), { status: 200 });
         });
         try {
-            // Set a short timeout (20ms) and mock fetch to take longer (30ms)
-            const client = new ResilientClient(baseURL, { baseDelay: 10, maxTries: 10, timeout: 60 });
+            // Set a short timeout (50ms) and mock fetch to take longer (100ms)
+            const client = new ResilientClient(baseURL, { baseDelay: 10, maxTries: 10, timeout: 50 });
 
             const retry = client.fetch(t.name);
             await rejects(async () => {

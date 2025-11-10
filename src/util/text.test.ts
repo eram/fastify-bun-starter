@@ -9,7 +9,6 @@ import {
     fromHumanBytes,
     htmlSpecialChars,
     humanBytes,
-    leftpad,
     locale,
     localePop,
     localePush,
@@ -96,23 +95,6 @@ describe('text utils', () => {
             );
             deepStrictEqual(deser, expected);
         }
-    });
-
-    test('Leftpad pads string', () => {
-        strictEqual(leftpad('foo', 5), '  foo');
-        strictEqual(leftpad('bar', 6, '*'), '***bar');
-        strictEqual(leftpad('baz', 5, 46), '..baz'); // 46 = '.'
-        strictEqual(leftpad('hello', 3), 'hello');
-        strictEqual(leftpad('', 4, 'x'), 'xxxx');
-
-        // input that is not a string!
-        strictEqual(leftpad(66 as unknown as string, 4, 'x'), 'xx66');
-
-        // Leftpad input is immutable (original should not change)
-        const original = 'test';
-        const padded = leftpad(original, 6, '*');
-        strictEqual(padded, '**test');
-        strictEqual(original, 'test');
     });
 });
 

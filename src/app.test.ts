@@ -17,21 +17,19 @@ describe('app', () => {
 
         const helloResponse = await app.inject({
             method: 'POST',
-            url: '/hello',
+            url: '/api/v1/hello',
             payload: { number: 12345, locale: 'en-US' },
         });
         strictEqual(helloResponse.statusCode, 200, 'Number formatting endpoint should be available');
 
-        const docsResponse = await app.inject({ method: 'GET', url: '/docs' });
+        const docsResponse = await app.inject({ method: 'GET', url: '/api/v1/swagger' });
         strictEqual(docsResponse.statusCode, 200, 'Swagger UI endpoint should be available');
 
-        const docsJsonResponse = await app.inject({ method: 'GET', url: '/docs/json' });
+        const docsJsonResponse = await app.inject({ method: 'GET', url: '/api/v1/openapi.json' });
         strictEqual(docsJsonResponse.statusCode, 200, 'OpenAPI spec endpoint should be available');
     });
-});
 
-describe('GET /health endpoint', () => {
-    test('returns ok status', async () => {
+    test('GET /health returns ok status', async () => {
         const response = await app.inject({
             method: 'GET',
             url: '/health',
@@ -44,13 +42,11 @@ describe('GET /health endpoint', () => {
         ok(json.timestamp, 'Should include timestamp');
         // workers field is optional (only available in cluster mode)
     });
-});
 
-describe('POST /hello endpoint (number formatting)', () => {
-    test('formats number with valid locale', async () => {
+    test('POST /api/v1/hello formats number with valid locale', async () => {
         const response = await app.inject({
             method: 'POST',
-            url: '/hello',
+            url: '/api/v1/hello',
             payload: {
                 number: 123456,
                 locale: 'en-US',
@@ -64,10 +60,10 @@ describe('POST /hello endpoint (number formatting)', () => {
         strictEqual(json.formatted, '123,456');
     });
 
-    test('validates required number field', async () => {
+    test('POST /api/v1/hello validates required number field', async () => {
         const response = await app.inject({
             method: 'POST',
-            url: '/hello',
+            url: '/api/v1/hello',
             payload: {
                 locale: 'en-US',
             },
@@ -76,10 +72,10 @@ describe('POST /hello endpoint (number formatting)', () => {
         strictEqual(response.statusCode, 400, 'Should return 400 for missing number');
     });
 
-    test('validates required locale field', async () => {
+    test('POST /api/v1/hello validates required locale field', async () => {
         const response = await app.inject({
             method: 'POST',
-            url: '/hello',
+            url: '/api/v1/hello',
             payload: {
                 number: 12345,
             },
@@ -88,10 +84,10 @@ describe('POST /hello endpoint (number formatting)', () => {
         strictEqual(response.statusCode, 400, 'Should return 400 for missing locale');
     });
 
-    test('validates locale format', async () => {
+    test('POST /api/v1/hello validates locale format', async () => {
         const response = await app.inject({
             method: 'POST',
-            url: '/hello',
+            url: '/api/v1/hello',
             payload: {
                 number: 12345,
                 locale: 'invalid_format',
@@ -101,10 +97,10 @@ describe('POST /hello endpoint (number formatting)', () => {
         strictEqual(response.statusCode, 400, 'Should return 400 for invalid locale format');
     });
 
-    test('rejects unsupported locale with available locales list', async () => {
+    test('POST /api/v1/hello rejects unsupported locale with available locales list', async () => {
         const response = await app.inject({
             method: 'POST',
-            url: '/hello',
+            url: '/api/v1/hello',
             payload: {
                 number: 12345,
                 locale: 'xx-XX',
@@ -116,13 +112,11 @@ describe('POST /hello endpoint (number formatting)', () => {
         ok(json.message, 'Should include error message');
         ok(json.availableLocales, 'Should include available locales list');
     });
-});
 
-describe('Swagger documentation', () => {
-    test('GET /docs returns HTML', async () => {
+    test('GET /api/v1/swagger returns HTML', async () => {
         const response = await app.inject({
             method: 'GET',
-            url: '/docs',
+            url: '/api/v1/swagger',
         });
 
         strictEqual(response.statusCode, 200, 'Should return 200 status code');
@@ -130,10 +124,10 @@ describe('Swagger documentation', () => {
         ok(response.body.includes('swagger-ui'), 'Should contain Swagger UI HTML');
     });
 
-    test('GET /docs/json returns OpenAPI spec', async () => {
+    test('GET /api/v1/openapi.json returns OpenAPI spec', async () => {
         const response = await app.inject({
             method: 'GET',
-            url: '/docs/json',
+            url: '/api/v1/openapi.json',
         });
 
         strictEqual(response.statusCode, 200, 'Should return 200 status code');

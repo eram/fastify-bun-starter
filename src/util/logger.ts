@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { format, styleText } from 'node:util';
-import { isDebuggerAttached } from './debugger';
+import { isDebugging } from './debugger';
 import { replacerFn } from './immutable';
 
 // Read package.json name once at module load time
@@ -82,9 +82,7 @@ export class LoggerConf {
         scope = this._defName(),
         level = (process.env.LOG_LEVEL ?? LogLevel.INFO) as LogLevel,
         addTime = (process.env.LOG_ADD_TIME ?? 'false').toLowerCase() === 'true',
-        formatter = (process.env.LOG_FORMAT ?? (isDebuggerAttached() ? 'line' : 'json')).toLowerCase() === 'json'
-            ? jsonFn
-            : lineFn,
+        formatter = (process.env.LOG_FORMAT ?? (isDebugging() ? 'line' : 'json')).toLowerCase() === 'json' ? jsonFn : lineFn,
         chalkFn = styleText,
         app = process.env.APP_NAME ?? packageName ?? path.basename(process.execPath),
     }: LoggerOptions = {}) {
@@ -138,7 +136,7 @@ export interface Logger extends Readonly<Transport>, Readonly<Console> {
 }
 
 // Re-export isDebuggerAttached from debugger module
-export { isDebuggerAttached };
+export { isDebugging as isDebuggerAttached };
 
 // Formatter for json output
 function jsonFn(this: LoggerConf, lvl: LogLevel, fn: LogFn, _chalk: Chalk, ...params: unknown[]) {
@@ -209,7 +207,7 @@ export function createLogger(
 
     // when debugging we dont take console intead of SpeedStd because it makes it hard to debug.
     // make sure required transport functions are there.
-    base ??= isDebuggerAttached() ? console : new SpeedStd();
+    base ??= isDebugging() ? console : new SpeedStd();
     const { log, error } = base;
     if (typeof log !== 'function' || typeof error !== 'function') {
         throw new TypeError('Base logger must have log and error methods');

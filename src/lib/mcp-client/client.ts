@@ -1,141 +1,132 @@
 /**
- * @file Base MCP client class
- * Provides common functionality for all MCP transport implementations
+ * @file MCP client types and interfaces
+ * Common types shared across all MCP transport implementations
  */
 
-import type { ErrorEx } from '../../util/error';
+import type { ToolDefinition, ToolResult } from '../mcp-server';
+import { type ArrV, array, type Validator } from '../validator';
+
+/**
+ * Shared validators for MCP responses
+ * Lazy initialization to avoid circular dependency
+ */
+let _validators: { list: ArrV<ToolDefinition>; result: Validator<ToolResult> } | undefined;
+
+/** Initialize validators on first access */
+function initValidators() {
+    if (!_validators) {
+        const { toolDefinitionSchema, toolResultSchema } = require('../mcp-server');
+        _validators = {
+            list: array(toolDefinitionSchema),
+            result: toolResultSchema,
+        };
+    }
+}
+
+export const validators = {
+    get list(): ArrV<ToolDefinition> {
+        initValidators();
+        return _validators!.list;
+    },
+    get result(): Validator<ToolResult> {
+        initValidators();
+        return _validators!.result;
+    },
+} as const;
+
+/**
+ * Event detail for 'error' events
+ */
+export interface MCPClientErrorDetail {
+    error: Error;
+}
+
+/**
+ * Event detail for 'disconnected' events (stdio only)
+ */
+export interface MCPClientDisconnectedDetail {
+    code: number | null;
+}
+
+/**
+ * Event callback types for MCP clients
+ *
+ * All clients extend EventTarget and emit lifecycle events:
+ * - **connected**: Fired when connection is established
+ * - **disconnected**: Fired when connection is closed
+ * - **error**: Fired when an error occurs (detail: { error: Error })
+ *
+ * Additional transport-specific events:
+ * - **stdio**: 'message' for each JSON-RPC message received
+ * - **sse**: 'reconnecting', 'session-changed', 'sse:{eventType}'
+ * - **http**: Uses synthetic events (connected fires immediately, disconnected on close)
+ */
+export type MCPClientEventMap = {
+    /** Fired when client successfully connects */
+    connected: Event;
+    /** Fired when client disconnects (detail varies by transport) */
+    disconnected: CustomEvent<MCPClientDisconnectedDetail> | Event;
+    /** Fired when an error occurs */
+    error: CustomEvent<MCPClientErrorDetail>;
+    /** Fired when reconnecting (SSE only) */
+    reconnecting?: Event;
+    /** Fired when session ID changes (SSE only) */
+    'session-changed'?: Event;
+    /** Fired for each JSON-RPC message (stdio only) */
+    message?: CustomEvent<unknown>;
+};
+
+/**
+ * Common MCP Client interface for all transports
+ * Provides a unified API for stdio, SSE, and HTTP clients
+ */
+export interface MCPClient {
+    /** Connect to the MCP server */
+    connect(): Promise<void>;
+
+    /** Check if client is connected */
+    readonly connected: boolean;
+
+    /** Reference count tracking how many tools use this connection */
+    refCount: number;
+
+    /** List available tools from the MCP server */
+    listTools(): Promise<ToolDefinition[]>;
+
+    /** Call a tool on the MCP server */
+    callTool(toolName: string, args: Record<string, unknown>): Promise<ToolResult>;
+
+    /** Close the client connection */
+    close(): Promise<void> | void;
+
+    /** Add event listener (inherited from EventTarget) */
+    addEventListener<K extends keyof MCPClientEventMap>(
+        type: K,
+        listener: (event: MCPClientEventMap[K]) => void,
+        options?: boolean | AddEventListenerOptions,
+    ): void;
+    addEventListener(type: string, listener: EventListener, options?: boolean | AddEventListenerOptions): void;
+
+    /** Remove event listener (inherited from EventTarget) */
+    removeEventListener<K extends keyof MCPClientEventMap>(
+        type: K,
+        listener: (event: MCPClientEventMap[K]) => void,
+        options?: boolean | EventListenerOptions,
+    ): void;
+    removeEventListener(type: string, listener: EventListener, options?: boolean | EventListenerOptions): void;
+
+    /** Dispatch event (inherited from EventTarget) */
+    dispatchEvent(event: Event): boolean;
+}
 
 /**
  * MCP initialization parameters
  */
 export interface McpInitializeParams {
     protocolVersion: string;
-    capabilities: Record<string, any>;
+    capabilities: Record<string, unknown>;
     clientInfo: {
         name: string;
         version: string;
     };
-}
-
-/**
- * MCP tool definition
- */
-export interface McpTool {
-    name: string;
-    description: string;
-    inputSchema: {
-        type: string;
-        properties: Record<string, any>;
-        required?: string[];
-    };
-}
-
-/**
- * MCP tool call result
- */
-export interface McpToolResult {
-    content: Array<{
-        type: string;
-        text: string;
-    }>;
-    isError: boolean;
-}
-
-/**
- * Base MCP client interface
- */
-export interface IMcpClient {
-    /** Check if client is connected */
-    readonly connected: boolean;
-
-    /** Check if client is closed */
-    readonly closed: boolean;
-
-    /**
-     * Initialize the MCP session
-     * @param params - Initialization parameters
-     */
-    initialize(params: McpInitializeParams): Promise<any>;
-
-    /**
-     * Get list of available tools
-     */
-    getTools(): Promise<McpTool[]>;
-
-    /**
-     * Call a tool with arguments
-     * @param name - Tool name
-     * @param args - Tool arguments
-     */
-    callTool(name: string, args: Record<string, any>): Promise<McpToolResult>;
-
-    /**
-     * Send a raw JSON-RPC request
-     * @param method - JSON-RPC method name
-     * @param params - Method parameters
-     */
-    sendRequest(method: string, params: any): Promise<any>;
-
-    /**
-     * Close the client connection
-     */
-    close(): void;
-
-    /**
-     * Add event listener
-     */
-    addEventListener(type: string, listener: EventListener): void;
-
-    /**
-     * Remove event listener
-     */
-    removeEventListener(type: string, listener: EventListener): void;
-}
-
-/**
- * Base MCP client class with common functionality
- */
-export abstract class McpClient extends EventTarget implements IMcpClient {
-    protected _closed = false;
-
-    abstract get connected(): boolean;
-
-    get closed(): boolean {
-        return this._closed;
-    }
-
-    /**
-     * Initialize the MCP session
-     */
-    async initialize(params: McpInitializeParams): Promise<any> {
-        return this.sendRequest('initialize', params);
-    }
-
-    /**
-     * Get list of available tools
-     */
-    async getTools(): Promise<McpTool[]> {
-        const result = await this.sendRequest('tools/list', {});
-        return result.tools || [];
-    }
-
-    /**
-     * Call a tool with arguments
-     */
-    async callTool(name: string, args: Record<string, any>): Promise<McpToolResult> {
-        return this.sendRequest('tools/call', {
-            name,
-            arguments: args,
-        });
-    }
-
-    /**
-     * Send a raw JSON-RPC request (must be implemented by subclass)
-     */
-    abstract sendRequest(method: string, params: any): Promise<any>;
-
-    /**
-     * Close the client connection (must be implemented by subclass)
-     */
-    abstract close(): void;
 }

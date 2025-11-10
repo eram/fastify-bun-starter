@@ -3,8 +3,12 @@
  * Provides per-session state management for MCP connections
  */
 
+import { createLogger } from '../../util';
 import { MCPServer } from './server';
 import type { ServerInfo } from './types';
+
+// Logger for session management
+const log = createLogger({ scope: 'mcp:session' });
 
 export interface SessionData {
     sessionId: string;
@@ -37,6 +41,25 @@ export class SessionStore {
         };
 
         this._sessions.set(sessionId, session);
+        return session;
+    }
+
+    /**
+     * Create a new session with a shared MCP server instance
+     * Useful for sharing tools across multiple sessions
+     */
+    createWithSharedServer(server: MCPServer, sessionId?: string, metadata?: Record<string, unknown>): SessionData {
+        const id = sessionId || this._generateSessionId();
+
+        const session: SessionData = {
+            sessionId: id,
+            server,
+            createdAt: new Date(),
+            lastActivity: new Date(),
+            metadata,
+        };
+
+        this._sessions.set(id, session);
         return session;
     }
 
@@ -101,13 +124,14 @@ export class SessionStore {
      * Send notification to all sessions
      * Useful for broadcasting config changes
      */
-    async notifyAllSessions(notificationFn: (server: MCPServer) => Promise<void>): Promise<void> {
-        const promises = Array.from(this._sessions.values()).map((session) =>
-            notificationFn(session.server).catch((err) => {
-                console.error(`Failed to send notification to session ${session.sessionId}:`, err);
-            }),
-        );
-        await Promise.all(promises);
+    notifyAllSessions(notificationFn: (server: MCPServer) => void): void {
+        for (const session of this._sessions.values()) {
+            try {
+                notificationFn(session.server);
+            } catch (err) {
+                log.warn(`Failed to send notification to session ${session.sessionId}:`, err);
+            }
+        }
     }
 
     /**

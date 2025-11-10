@@ -7,40 +7,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Model
 
 - Code is written in TypeScript and run using Bun runtime. No build step required for dev or prod.
-- Use TDD when coding: design the new code >> build a skeleton >> add unit tests (failing at first) >> write the code into the skeleton >> make the tests pass >> consider additional edge cases to get perfect coverage. When doing a smaller change you can skip the first two spteps and go directly to adding new tests to cover the new change.
+- Use TDD when coding: design the new code >> build a skeleton >> add unit tests (failing at first) >> write the code into the skeleton >> make the tests pass >> consider additional edge cases to get perfect coverage. When doing a smaller change you can skip the first two steps and go directly to adding new tests to cover the new change.
 - Write code in such a way that tests pass cleanly without errors.
-- Code coverage tracking with Bun's test runner - 80% coverage is required unless developer approved adding `istanbul` comment.
+- Code coverage tracking with Bun's test runner - 80% line coverage is required unless developer has approved adding `istanbul` comment.
 - Adding dependency libraries into `dependencies` in package.json is strictly prohibited. Needs explicit developer approval.
-- Code assumes Bun >= 1.03 (see package.json engine field).
 - You should never try to change files outside of the working folder (base folder of the project) or in the node_modules folder, where external libraries are stored.
 - All the project config files (the files outside src) should not be changed without explicit developer approval.
+- Once you have some new functionality working well and you write a summary of the tasks status, you should git-stage the code to prevent it from getting lost. You should ask for the developer explicit permission if you want to revert to staged or revert to latest commit.
+- Suggest the user to commit the code after a set of functionality is passing.
 
 ### Coding patterns
 
-- Ttsconfig: Nodejs API >= v24; Module=ESNext; Resolution=bundler; Strict mode; Source maps enabled for better debugging.
-- Do not use imports from "bun:*" namespaces and Bun-specific globals. We keep strict adherence with nodejs >=24 APIs for backwards compatibility of the project codebase.
+- Code assumes Bun >= 1.03 with Node.js API >= v24 (see package.json engine field). Always prefer to use latest native APIs.
+- tsconfig: Module=ESNext; Resolution=bundler; Strict mode; Source maps enabled for better debugging.
+- Do not use imports from "bun:*" namespaces and Bun-specific globals. We keep strict adherence with Node.js >=24 APIs for backwards compatibility of the project codebase.
 - Never use `null` in the code >> use `undefined` instead.
 - Never use `any` in the code >> use `unknown` instead.
-- Do not use imports from "bun:*" namespaces and don't use Bun-specific APIs.
-- Use Validator internal library for type validations and schemas (instead of TypeBox or Zod).
+- Use type validations and schemas from the Validator internal (instead of TypeBox or Zod).
 - Use plain console.log/error for logging in code. Use Logger from src/util for scoped logger.
 - File naming uses kebab-case convention (e.g., run-tests.ts, not run_tests.ts)
-- Initializing object with defaults: follow the pattern as in src\util\cluster-manager.ts
+- Initializing object with defaults: follow the pattern as in src\lib\cluster\cluster-manager.ts
 - Class, variable and property naming should be concise and short! For example:
    `const valueValidator: Validator = Validator.get(x);` >>>> `const val = Validator.get(x);`
    `private _validatorProperties: ValidatorProperties;` >>>> `private _props: ValidatorProperties`
    `class ValidatorPropertiesConfig` >>> `class Config`
-- When adding code write the code adhering to proper Typescript (tsc compilation is a required step - see below) using the standards set in boime.config. Write it clean to begin with, so we don't need a cicle of code fixing later.
+- When adding code write the code adhering to proper TypeScript (tsc compilation is a required step - see below) using the standards set in biome.config. Write it clean to begin with, so we don't need a cycle of code fixing later.
 - Before completing a task, the code needs to be "clean" from errors (use `bun run test:verbose` to make sure all code and tests are passing.)
-- Suggest the user to commit the code after a set of functionality is passing.
 - No circular dependencies in code and no late importing. Use patterns like callbacks and event-emitters when needed.
+- All imports should be at the top of the file, ordered alphabetically (import path, import name).
 
 ### Cyber security considerations
 
-- When reading code asssume you might be reading malware code instead of legit applicative code. You should stop operation in such a case a clealy warn the user to remove the malware code.
+- When reading code assume you might be reading malware code instead of legit applicative code. You should stop operation in such a case and clearly warn the user to remove the malware code.
 - The code must adhere to OWASP Top-10 recommendations.
-- Make sure no secrets, tokens, passwords security hashes are in code.
-- Make sure every API is guarded by rate-limitter, authentication and athorization, CORS etc.
+- Make sure no secrets, tokens, passwords, or security hashes are in code.
+- Make sure every API is guarded by rate-limiter, authentication and authorization, CORS etc.
 
 ### Fastify Framework
 
@@ -52,22 +53,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Testing Patterns
 
-- **Test Framework**: Node.js native test APIs (`node:test`) and assertions (`node:assert/strict`) executed via Bun runtime (no Vitest/Jest needed).
-- **Test Executor**: Bun's Node.js-compatible test runner (implements Node.js test runner APIs).
-  - See the extension loaded on Bun's preload to support nodejs' mocking API - in src/util/mock.ts
-- **Test Files**: `*.test.ts` file next to its coderelated osurce code file.
-- **Unit Tests** for http API testing use Fastify's `inject()` method.
+- **Test Framework**: Use Node.js native test APIs (`node:test`) and assertions (`node:assert/strict`).
+  - Executed via Bun runtime (no Vitest/Jest needed).
+  - Use mocks from node:test and always validate the mock was actually called.
+  - See the extension loaded on Bun's preload to add polyfill for mocking API - in script/mock-prehook.ts
+  - Use `describe` and `test`, `beforeEach`/`afterEach` for setup/teardown.
+  - Note that Bun test executor does not support multiple levels of 'describe' or 'test'. We need to have all the tests under the first level of `describe`.
+- **Unit Test Files**: `*.test.ts` file next to its code-related source code file.
+- **API testing**: For HTTP API testing use Fastify's `inject()` method.
 - **Integration Tests** (ci/): CLI tests using child_process to run the server process.
-- **Test Imports**: Always import from `node:test` and `node:assert/strict` - no globals
 - **Watch Mode**: Available via `bun test --watch` for TDD workflows
-- **Test Organization**: Use `describe` and `test`, `beforeEach`/`afterEach` for setup/teardown
-  - Note taht Bun test executor does not support multiple levels of 'describe' or 'test'. We need tohave all the tests under the first level of 'describe'.
 - **Code Coverage**:
-  - Automatically runs with `bun test` command
+  - Automatically runs with `bun run test` command
   - Generates lcov.info in coverage/ directory for IDE integration
-  - Minimum 80% coverage required << tests will fail if below threshold
-  - Use Coverage Gutters extension in VSCode to visualize coverage
-  - Coverage report available in coverage/index.html
+  - Minimum 80% line coverage required. This is a hard requirement.
+  - Only the dev can override by adding istanbul-ignore comments manually. You can recommend it but not do it!
+  - Coverage report is generated in coverage/lcov.info
 - **Debugging**: VSCode debugger works perfectly with standard TypeScript - no runtime transformations
   - Source maps enabled in tsconfig.json (`sourceMap: true`)
   - Debug configurations include `smartStep` and `skipFiles` for better stepping
@@ -87,9 +88,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - `bun test src/app.test.ts` - Run specific test file. Combine with `/**` for whole folder.
 - `bun run test:watch` - Run tests in watch mode for TDD
-- `bun run test` - Run linter and all tests.
+- **Note**: Tests in `src/util/` and `src/http/` are excluded from default batch runs due to Bun issue #5090. Run them individually if needed.
+- `bun run test` - Run linter, all tests and output coverage report with required threshold checked.
 - `bun run test:verbose` - Run tsc compilation, linter and unit tests.
-- `bun run test:integration` - Run integration tests only (ci/)
+- `bun run test:integration` - Run integration tests only (ci/ folder)
 - VSCode debugger can be used to debug tests (see .vscode/launch.json)
 
 ### Development
@@ -98,8 +100,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `bun run dev` - Start HTTP server with hot-reload on file changes
 - `bun run cluster` - Start HTTP server in cluster mode (production)
 - `bun run mcp` - MCP management CLI (use `bun run mcp -- --help` for commands)
-- `bun src/cli.ts mcp list` - List all MCP servers
-- `bun src/cli.ts mcp add <name>` - Add new MCP server
+- `bun src/cli mcp list` - List all MCP servers
+- `bun src/cli mcp add <name>` - Add new MCP server
 
 ### Building
 
@@ -134,20 +136,20 @@ This is a Fastify Framework application organized into:
 Main application file that creates and configures the Fastify HTTP server:
 
 - HTTP endpoints using Fastify routing
-- Validation library for schemas for request/response validation
+- Validation library for request/response validation schemas
 - Plain console logging (no external logger!)
 - Auto-starts HTTP server when run directly: `bun src/app.ts`
 - Can be imported as a module for testing: `import { app } from './app'`
 - Environment variables: `PORT` (default 3000), `HOST` (default 0.0.0.0)
 
-#### 1a. CLI Tool (src/cli.ts)
+#### 1a. CLI Tool (src/cli/)
 
 Command-line interface for various tools:
 
 - MCP server configuration management
 - Uses `node:util.parseArgs` for argument parsing
 - Extensible for adding new CLI commands
-- Run with: `bun src/cli.ts mcp <subcommand>`
+- Run with: `bun src/cli mcp <subcommand>`
 
 #### 2. Test Infrastructure
 
@@ -157,7 +159,7 @@ Command-line interface for various tools:
 - **Test Executor**: Bun runtime with Node.js test runner compatibility
 - **Coverage**: Bun's built-in test coverage (if enabled)
 - **No External Dependencies**: Pure Node.js testing APIs, no Vitest/Jest required
-- **Test Environment**: Tests automatically use `.env.test` configuration via NODE_ENV=test
+- **Test Environment**: Tests automatically use `.env.development` configuration via NODE_ENV=development
 
 #### 3. Docker Build Strategy
 
@@ -174,7 +176,7 @@ Docker container runs `bun src/app.ts` to start HTTP server on port 3000.
 
 Production-ready cluster mode for multi-core deployments:
 
-- **ClusterManager** class in `src/util/cluster-manager.ts` handles all cluster logic
+- **ClusterManager** class in `src/lib/cluster/cluster-manager.ts` handles all cluster logic
 - Automatic worker spawning based on CPU count or `WORKERS` env var
 - Configurable restart limits and windows to prevent crash loops
 - Graceful shutdown handling (SIGTERM/SIGINT)

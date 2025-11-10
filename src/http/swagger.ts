@@ -1,18 +1,19 @@
 import type { FastifyInstance } from 'fastify';
+import { Env } from '../util';
 
 /**
  * Register Swagger documentation
- * Swagger UI will be available at /docs
- * OpenAPI spec will be available at /docs/json
+ * Swagger UI will be available at /api/v1/swagger
+ * OpenAPI spec will be available at /api/v1/openapi.json
  */
-export async function registerSwagger(app: FastifyInstance) {
+export function registerSwagger(app: FastifyInstance) {
     // Manual Swagger/OpenAPI spec builder
     const openApiSpec = {
         openapi: '3.0.0',
         info: {
-            title: 'Fastify Bun Starter API',
-            description: 'API documentation for Fastify Bun Starter application',
-            version: '0.1.0',
+            title: Env.appName,
+            description: 'API documentation',
+            version: Env.appVersion,
         },
         servers: [
             {
@@ -37,7 +38,7 @@ export async function registerSwagger(app: FastifyInstance) {
     };
 
     // Serve OpenAPI JSON spec
-    app.get('/docs/json', async () => {
+    app.get('/api/v1/openapi.json', async () => {
         // Build paths dynamically from registered routes
         const paths: Record<string, unknown> = {};
 
@@ -46,7 +47,7 @@ export async function registerSwagger(app: FastifyInstance) {
             const match = route.match(/[├└─│]\s*(.+?)\s+\(([A-Z]+)\)/);
             if (match) {
                 const [, path, method] = match;
-                if (path.startsWith('/docs')) continue; // Skip documentation routes
+                if (path.startsWith('/api/v1/swagger') || path.startsWith('/api/v1/openapi')) continue; // Skip documentation routes
 
                 // For now, create basic path entries
                 if (!paths[path]) {
@@ -79,14 +80,14 @@ export async function registerSwagger(app: FastifyInstance) {
     });
 
     // Serve Swagger UI HTML
-    app.get('/docs', async (_request, reply) => {
+    app.get('/api/v1/swagger', async (_request, reply) => {
         const html = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fastify Bun Starter API Docs</title>
+    <title>MCP Aggregator API Docs</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
 </head>
 <body>
@@ -94,23 +95,15 @@ export async function registerSwagger(app: FastifyInstance) {
     <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
     <script>
-        window.onload = () => {
-            window.ui = SwaggerUIBundle({
-                url: '/docs/json',
-                dom_id: '#swagger-ui',
-                presets: [
-                    SwaggerUIBundle.presets.apis,
-                    SwaggerUIStandalonePreset
-                ],
-                layout: 'StandaloneLayout',
-                deepLinking: true,
-                displayRequestDuration: true,
-                filter: true,
-                showExtensions: true,
-                showCommonExtensions: true,
-                tryItOutEnabled: true
-            });
-        };
+        SwaggerUIBundle({
+            url: '/api/v1/openapi.json',
+            dom_id: '#swagger-ui',
+            presets: [
+                SwaggerUIBundle.presets.apis,
+                SwaggerUIStandalonePreset
+            ],
+            layout: 'StandaloneLayout'
+        });
     </script>
 </body>
 </html>
@@ -119,6 +112,6 @@ export async function registerSwagger(app: FastifyInstance) {
         reply.type('text/html').send(html);
     });
 
-    console.log('Swagger UI registered at /docs');
-    console.log('OpenAPI spec available at /docs/json');
+    console.log('Swagger UI registered at /api/v1/swagger');
+    console.log('OpenAPI spec available at /api/v1/openapi.json');
 }

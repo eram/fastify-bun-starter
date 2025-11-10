@@ -43,6 +43,14 @@ export class ErrorEx extends Error {
             warn(new.target.prototype, e);
         }
     }
+
+    /**
+     * Custom inspect for Node.js console logging: shows just the message for cleaner logging
+     * This allows `console.error(error)` to display cleanly.
+     */
+    [Symbol.for('nodejs.util.inspect.custom')](): string {
+        return `[${this.name}] ${this.message}`;
+    }
 }
 
 /**

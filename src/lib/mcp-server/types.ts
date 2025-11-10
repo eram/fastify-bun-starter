@@ -1,12 +1,12 @@
+/* istanbul ignore file */
 /**
  * MCP (Model Context Protocol) types and validation schemas
  * Based on MCP specification with adaptations for this project
  * Schemas are the source of truth - types are inferred from them
  */
 
-import { ErrorEx } from '../../util/error';
-import type { Infer } from '../validator/validator';
-import { array, boolean, literal, number, object, record, string, union } from '../validator/validator';
+import { ErrorEx } from '../../util';
+import { array, boolean, type Infer, literal, number, object, record, string, union } from '../validator';
 
 // Constants
 export const JSONRPC_VERSION = '2.0';
@@ -54,10 +54,14 @@ export const serverInfoSchema = {
     version: string(),
 };
 
+export type ServerInfo = Infer<typeof serverInfoSchema>;
+
 export const rootSchema = {
     uri: string(),
     name: string().optional(),
 };
+
+export type Root = Infer<typeof rootSchema>;
 
 export const toolResultContentSchema = {
     type: literal('text'),
@@ -69,11 +73,15 @@ export const cancelledNotifParamsSchema = {
     reason: string().optional(),
 };
 
+export type CancelledNotificationParams = Infer<typeof cancelledNotifParamsSchema>;
+
 export const initializeParamsSchema = {
     protocolVersion: string(),
     capabilities: record(),
     clientInfo: object(serverInfoSchema),
 };
+
+export type InitializeParams = Infer<typeof initializeParamsSchema>;
 
 export const initializeResultSchema = {
     protocolVersion: string(),
@@ -86,9 +94,13 @@ export const initializeResultSchema = {
     serverInfo: object(serverInfoSchema),
 };
 
+export type InitializeResult = Infer<typeof initializeResultSchema>;
+
 export const listRootsResultSchema = {
     roots: array(object(rootSchema)),
 };
+
+export type ListRootsResult = Infer<typeof listRootsResultSchema>;
 
 export const progressNotifParamsSchema = {
     progressToken: union([string(), number()] as const),
@@ -96,6 +108,8 @@ export const progressNotifParamsSchema = {
     total: number().optional(),
     message: string().optional(),
 };
+
+export type ProgressNotificationParams = Infer<typeof progressNotifParamsSchema>;
 
 export const toolCallParamsSchema = {
     name: string(),
@@ -106,38 +120,30 @@ export const toolCallParamsSchema = {
     }).optional(),
 };
 
-export const toolDefinitionSchema = {
+export type ToolCallParams = Infer<typeof toolCallParamsSchema>;
+
+export const toolDefinitionSchema = object({
     name: string(),
     description: string(),
-    inputSchema: object({
-        type: literal('object'),
-        properties: record().optional(),
-        required: array(string()).optional(),
-    }),
-};
+    inputSchema: object().passthrough(), // Allow any JSON object structure
+});
 
-export const toolResultSchema = {
+export type ToolDefinition = Infer<typeof toolDefinitionSchema>;
+
+export const toolResultSchema = object({
     content: array(object(toolResultContentSchema)),
     isError: boolean().optional(),
-};
+});
+
+export type ToolResult = Infer<typeof toolResultSchema>;
 
 // Inferred types from schemas
-export type CancelledNotificationParams = Infer<typeof cancelledNotifParamsSchema>;
-export type InitializeParams = Infer<typeof initializeParamsSchema>;
-export type InitializeResult = Infer<typeof initializeResultSchema>;
-export type ListRootsResult = Infer<typeof listRootsResultSchema>;
 export type Progress = {
     progress: number;
     total?: number;
     message?: string;
 };
-export type ProgressNotificationParams = Infer<typeof progressNotifParamsSchema>;
 export type ProgressToken = string | number;
-export type Root = Infer<typeof rootSchema>;
-export type ServerInfo = Infer<typeof serverInfoSchema>;
-export type ToolCallParams = Infer<typeof toolCallParamsSchema>;
-export type ToolDefinition = Infer<typeof toolDefinitionSchema>;
-export type ToolResult = Infer<typeof toolResultSchema>;
 
 // Specific notification types
 export interface CancelledNotification extends JSONRPCNotification {

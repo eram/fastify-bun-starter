@@ -3,10 +3,12 @@ import { type Provider, schemaCompiler } from '../lib/validator';
 import { Env } from '../util/env';
 import { replacerFn, reviverFn } from '../util/immutable';
 import { fromHumanBytes } from '../util/text';
-import { registerHealthRoute } from './health';
-import { registerHelloRoute } from './hello';
-import { registerMCPRoute } from './mcp';
+import { registerConfig } from './config';
+import { registerHealth } from './health';
+import { registerHello } from './hello';
+import { registerMCP } from './mcp';
 import { registerSecurityPlugins } from './security';
+import { registerStatic } from './static';
 import { registerSwagger } from './swagger';
 
 /**
@@ -52,19 +54,21 @@ export function createServer() {
 /**
  * Register all routes and plugins
  */
-export async function registerAll(app: ReturnType<typeof createServer>) {
+export async function registerRoutes(app: ReturnType<typeof createServer>) {
     // Register security plugins FIRST (order matters!)
     await registerSecurityPlugins(app);
 
     // Register Swagger documentation
-    await registerSwagger(app);
+    registerSwagger(app);
 
     // Register all HTTP routes
-    await registerHealthRoute(app);
-    await registerHelloRoute(app);
-    await registerMCPRoute(app);
+    registerHealth(app);
+    registerHello(app);
+    registerMCP(app);
+    registerConfig(app); // MCP server configuration CRUD API
 
-    console.log('Fastify app initialized');
+    // Register static file serving (must be last to avoid route conflicts)
+    await registerStatic(app);
 }
 
 /**
@@ -78,7 +82,7 @@ export async function startServer(app: ReturnType<typeof createServer>) {
         await app.listen({ port, host });
         console.log(`Server listening on http://${host}:${port}`);
         console.log(`Health check: http://${host}:${port}/health`);
-        console.log(`Swagger UI: http://${host}:${port}/docs`);
+        console.log(`Swagger UI: http://${host}:${port}/api/v1/swagger`);
     } catch (err) {
         console.error('Error starting server:', err);
         process.exit(1);
