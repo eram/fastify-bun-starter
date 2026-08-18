@@ -1,0 +1,122 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.3.2/schema.json",
+  "vcs": {
+    "enabled": false,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": [
+      "src/**/*.{js,ts,jsx,tsx,json}",
+      "ci/**/*.{js,ts}",
+      "script/*.{js,ts}",
+      "!!**/*.min.js",
+      "!!node_modules",
+      "!!src/**/__mocks__"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 130
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "suspicious": {
+        "noConsole": "off",
+        "noExplicitAny": "error",
+        "noAssignInExpressions": "off"
+      },
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "error",
+          "options": {
+            "maxAllowedComplexity": 50
+          }
+        },
+        "noVoid": "error"
+      },
+      "correctness": {
+        "noConstantCondition": "off",
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error",
+        "noUnusedFunctionParameters": "error",
+        "noUnusedPrivateClassMembers": "error"
+      },
+      "style": {
+        "noParameterAssign": "off",
+        "useNodeAssertStrict": "error",
+        "useEnumInitializers": "off",
+        "useImportType": "off",
+        "noNonNullAssertion": "off",
+        "useNamingConvention": {
+          "level": "error",
+          "options": {
+            "conventions": [
+              {
+                "selector": {
+                  "kind": "classMember",
+                  "modifiers": ["private"]
+                },
+                "match": "[#_](.+)",
+                "formats": ["camelCase"]
+              },
+              {
+                "selector": {
+                  "kind": "classProperty",
+                  "modifiers": ["static", "readonly"]
+                },
+                "formats": ["CONSTANT_CASE"]
+              },
+              {
+                "selector": {
+                  "kind": "enumMember"
+                },
+                "formats": ["CONSTANT_CASE"]
+              },
+              {
+                "selector": {
+                  "kind": "objectLiteralProperty"
+                },
+                "formats": ["camelCase", "snake_case", "PascalCase", "CONSTANT_CASE"]
+              },
+              {
+                "selector": {
+                  "kind": "const",
+                  "scope": "any"
+                },
+                "match": "[A-Z][0-9A-Z_]{0,30}|[a-z0-9][a-zA-Z0-9]{0,30}|[$_]{1,2}|__[a-z0-9A-Z_]{1,30}__|__[a-z0-9A-Z_]{1,30}"
+              },
+              {
+                "selector": {
+                  "kind": "variable",
+                  "scope": "any"
+                },
+                "match": "[$_]{1,2}|[a-z0-9_][a-zA-Z0-9]{0,30}[_]{0,1}"
+              }
+            ],
+            "requireAscii": true,
+            "strictCase": false
+          }
+        }
+      },
+      "security": {
+        "noDangerouslySetInnerHtml": "off"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "indentStyle": "space",
+      "quoteStyle": "single",
+      "jsxQuoteStyle": "single",
+      "quoteProperties": "asNeeded",
+      "indentWidth": 4,
+      "semicolons": "always"
+    }
+  }
+}

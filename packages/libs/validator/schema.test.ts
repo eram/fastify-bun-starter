@@ -1,0 +1,1088 @@
+import { describe, expect, test } from 'bun:test';
+import { array, bigint, boolean, date, literal, map, nullable, nullish, number, object, set, string, union, z } from './index';
+import { fromJsonSchema, type JsonSchema, toJsonSchema } from './schema';
+
+const defOpts = () => ({ includeSchemaVersion: false });
+
+describe('Validator Schema', () => {
+    // jsonSchema basic types
+    test('should convert primitive types', (t) => {
+        const result = toJsonSchema(
+            object({
+                name: string(),
+                age: number(),
+                active: boolean(),
+                count: bigint(),
+                created: date(),
+            }),
+            defOpts(t),
+        );
+
+        expect(result).toEqual({
+            type: 'object',
+            properties: {
+                name: { type: 'string' },
+                age: { type: 'number' },
+                active: { type: 'boolean' },
+                count: { type: 'integer' },
+                created: { type: 'string', format: 'date-time' },
+            },
+            required: ['name', 'age', 'active', 'count', 'created'],
+            additionalProperties: false,
+        });
+    });
+
+    test('should convert object schemas with nesting', (t) => {
+        const simple = toJsonSchema(
+            object({
+                name: string(),
+                age: number(),
+            }),
+            defOpts(t),
+        );
+
+        expect(simple).toEqual({
+            type: 'object',
+            properties: {
+                name: { type: 'string' },
+                age: { type: 'number' },
+            },
+            required: ['name', 'age'],
+            additionalProperties: false,
+        });
+
+        const nested = toJsonSchema(
+            object({
+                user: object({
+                    name: string(),
+                    age: number(),
+                }),
+            }),
+            defOpts(t),
+        );
+
+        expect(nested.properties?.['user']).toEqual({
+            type: 'object',
+            properties: {
+                name: { type: 'string' },
+                age: { type: 'number' },
+            },
+            required: ['name', 'age'],
+            additionalProperties: false,
+        });
+
+        const deep = toJsonSchema(
+            object({
+                data: object({
+                    user: object({
+                        profile: object({
+                            name: string(),
+                        }),
+                    }),
+                }),
+            }),
+            defOpts(t),
+        );
+
+        expect(deep.properties?.['data']);
+        const dataProps = (deep.properties['data'] as { properties?: Record<string, unknown> }).properties;
+        expect(dataProps?.['user']);
+        const userProps = (dataProps!['user'] as { properties?: Record<string, unknown> }).properties;
+        expect(userProps?.['profile']);
+        expect(userProps?.['profile']).toEqual({
+            type: 'object',
+            properties: {
+                name: { type: 'string' },
+            },
+            required: ['name'],
+            additionalProperties: false,
+        });
+    });
+
+    test('should handle optional properties', (t) => {
+        const result = toJsonSchema(
+            object({
+                name: string(),
+                email: string().optional(),
+            }),
+            defOpts(t),
+        );
+
+        expect(result).toEqual({
+            type: 'object',
+            properties: {
+                name: { type: 'string' },
+                email: { type: 'string' },
+            },
+            required: ['name'],
+            additionalProperties: false,
+        });
+    });
+
+    test('should convert array types', (t) => {
+        const strings = toJsonSchema(object({ tags: array(string()) }), defOpts(t));
+        expect(strings.properties?.['tags']).toEqual({
+            type: 'array',
+            items: { type: 'string' },
+        });
+
+        const numbers = toJsonSchema(object({ scores: array(number()) }), defOpts(t));
+        expect(numbers.properties?.['scores']).toEqual({
+            type: 'array',
+            items: { type: 'number' },
+        });
+
+        const objects = toJsonSchema(
+            object({
+                users: array(object({ name: string(), age: number() })),
+            }),
+            defOpts(t),
+        );
+        expect(objects.properties?.['users']).toEqual({
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    name: { type: 'string' },
+                    age: { type: 'number' },
+                },
+                required: ['name', 'age'],
+                additionalProperties: false,
+            },
+        });
+
+        const generic = toJsonSchema(object({ items: array() }), defOpts(t));
+        expect(generic.properties?.['items']).toEqual({ type: 'array' });
+
+        const nested = toJsonSchema(object({ matrix: array(array(number())) }), defOpts(t));
+        expect(nested.properties?.['matrix']).toEqual({
+            type: 'array',
+            items: {
+                type: 'array',
+                items: { type: 'number' },
+            },
+        });
+    });
+
+    test('should convert union types', (t) => {
+        const primitives = toJsonSchema(
+            object({
+                value: union([string(), number()]),
+            }),
+            defOpts(t),
+        );
+        expect(primitives.properties?.['value']).toEqual({
+            type: ['string', 'number'],
+        });
+
+        const withBoolean = toJsonSchema(
+            object({
+                flag: union([string(), boolean()]),
+            }),
+            defOpts(t),
+        );
+        expect(withBoolean.properties?.['flag']).toEqual({
+            type: ['string', 'boolean'],
+        });
+
+        const three = toJsonSchema(
+            object({
+                data: union([string(), number(), boolean()]),
+            }),
+            defOpts(t),
+        );
+        expect(three.properties?.['data']).toEqual({
+            type: ['string', 'number', 'boolean'],
+        });
+
+        const optional = toJsonSchema(
+            object({
+                value: union([string(), number()]).optional(),
+            }),
+            defOpts(t),
+        );
+        expect(optional.properties?.['value']).toEqual({
+            type: ['string', 'number'],
+        });
+        expect(optional.required, []);
+    });
+
+    test('should convert literal types', (t) => {
+        const stringLit = toJsonSchema(object({ status: literal('pending') }), defOpts(t));
+        expect(stringLit.properties?.['status']).toEqual({
+            type: 'string',
+            const: 'pending',
+        });
+
+        const numberLit = toJsonSchema(object({ code: literal(404) }), defOpts(t));
+        expect(numberLit.properties?.['code']).toEqual({
+            type: 'number',
+            const: 404,
+        });
+
+        const boolLit = toJsonSchema(object({ enabled: literal(true) }), defOpts(t));
+        expect(boolLit.properties?.['enabled']).toEqual({
+            type: 'boolean',
+            const: true,
+        });
+
+        const nullLit = toJsonSchema(object({ data: literal(null) }), defOpts(t));
+        expect(nullLit.properties?.['data']).toEqual({
+            type: 'null',
+        });
+    });
+
+    test('should convert nullable types', (t) => {
+        const str = toJsonSchema(object({ name: nullable(string()) }), defOpts(t));
+        expect(str.properties?.['name']).toEqual({
+            type: ['string', 'null'],
+        });
+
+        const num = toJsonSchema(object({ count: nullable(number()) }), defOpts(t));
+        expect(num.properties?.['count']).toEqual({
+            type: ['number', 'null'],
+        });
+
+        const bool = toJsonSchema(object({ active: nullable(boolean()) }), defOpts(t));
+        expect(bool.properties?.['active']).toEqual({
+            type: ['boolean', 'null'],
+        });
+
+        const arr = toJsonSchema(object({ tags: nullable(array(string())) }), defOpts(t));
+        expect(arr.properties?.['tags']).toEqual({
+            anyOf: [{ type: 'array', items: { type: 'string' } }, { type: 'null' }],
+        });
+
+        const optNull = toJsonSchema(object({ name: nullable(string()).optional() }), defOpts(t));
+        expect(optNull.properties?.['name']).toEqual({
+            type: ['string', 'null'],
+        });
+        expect(optNull.required, []);
+    });
+
+    test('should convert nullish types', (t) => {
+        const str = toJsonSchema(object({ name: nullish(string()) }), defOpts(t));
+        expect(str.properties?.['name']).toEqual({
+            type: ['string', 'null'],
+        });
+        expect(str.required, []);
+
+        const num = toJsonSchema(object({ age: nullish(number()) }), defOpts(t));
+        expect(num.properties?.['age']).toEqual({
+            type: ['number', 'null'],
+        });
+        expect(num.required, []);
+    });
+
+    test('should convert set and map types', (t) => {
+        const setStr = toJsonSchema(object({ tags: set(string()) }), defOpts(t));
+        expect(setStr.properties?.['tags']).toEqual({
+            type: 'array',
+            uniqueItems: true,
+            items: { type: 'string' },
+        });
+
+        const setNum = toJsonSchema(object({ ids: set(number()) }), defOpts(t));
+        expect(setNum.properties?.['ids']).toEqual({
+            type: 'array',
+            uniqueItems: true,
+            items: { type: 'number' },
+        });
+
+        const setGen = toJsonSchema(object({ values: set() }), defOpts(t));
+        expect(setGen.properties?.['values']).toEqual({
+            type: 'array',
+            uniqueItems: true,
+        });
+
+        const mapStr = toJsonSchema(object({ metadata: map(string()) }), defOpts(t));
+        expect(mapStr.properties?.['metadata']).toEqual({
+            type: 'object',
+            additionalProperties: { type: 'string' },
+        });
+
+        const mapNum = toJsonSchema(object({ counters: map(number()) }), defOpts(t));
+        expect(mapNum.properties?.['counters']).toEqual({
+            type: 'object',
+            additionalProperties: { type: 'number' },
+        });
+
+        const mapGen = toJsonSchema(object({ data: map() }), defOpts(t));
+        expect(mapGen.properties?.['data']).toEqual({
+            type: 'object',
+            additionalProperties: true,
+        });
+    });
+
+    // Json schema builup
+    test('should control schema version inclusion and targets', (t) => {
+        const withVersion = toJsonSchema(object({ name: string() }), { ...defOpts(t), includeSchemaVersion: true });
+        expect(withVersion.$schema, 'http://json-schema.org/draft-07/schema#');
+
+        const schema2019 = toJsonSchema(object({ name: string() }), {
+            ...defOpts(t),
+            includeSchemaVersion: true,
+            target: 'jsonSchema2019-09',
+        });
+        expect(schema2019.$schema, 'https://json-schema.org/draft/2019-09/schema');
+
+        const schema2020 = toJsonSchema(object({ name: string() }), {
+            ...defOpts(t),
+            includeSchemaVersion: true,
+            target: 'jsonSchema2020-12',
+        });
+        expect(schema2020.$schema, 'https://json-schema.org/draft/2020-12/schema');
+
+        const openApi = toJsonSchema(object({ name: string() }), {
+            ...defOpts(t),
+            includeSchemaVersion: true,
+            target: 'openApi3',
+        });
+        expect(openApi.$schema, undefined);
+
+        const noVersion = toJsonSchema(object({ name: string() }));
+        expect(noVersion.$schema, undefined);
+    });
+
+    test('should handle naming and definition paths', (t) => {
+        const withName = toJsonSchema(object({ name: string() }), { name: 'User', title: 'USER' });
+        expect(withName.$ref, '#/definitions/User');
+        expect(Object(withName).definitions);
+        expect(Object(withName).definitions.User);
+
+        const customPath = toJsonSchema(object({ name: string() }), {
+            ...defOpts(t),
+            name: 'User',
+            definitionPath: 'definitions',
+            includeSchemaVersion: false,
+        });
+        expect(Object(customPath).$ref, '#/definitions/User');
+        expect(Object(customPath).definitions);
+        expect(Object(customPath).definitions.User);
+
+        const stringAsName = toJsonSchema(object({ name: string() }), 'User');
+        expect(Object(stringAsName).$ref, '#/definitions/User');
+        expect(Object(stringAsName).definitions);
+        expect(Object(stringAsName).definitions.User);
+    });
+
+    test('should control additional properties', (t) => {
+        const allowed = toJsonSchema(object({ name: string() }), {
+            ...defOpts(t),
+            includeSchemaVersion: false,
+            additionalProperties: true,
+        });
+        expect(allowed.additionalProperties, true);
+
+        const disallowed = toJsonSchema(object({ name: string() }), defOpts(t));
+        expect(disallowed.additionalProperties, false);
+    });
+
+    test('should convert complex schemas', (t) => {
+        const userSchema = toJsonSchema(
+            object({
+                id: number(),
+                name: string(),
+                email: string().optional(),
+                roles: array(string()),
+                isActive: boolean(),
+            }),
+            { ...defOpts(t), includeSchemaVersion: false },
+        );
+
+        expect(userSchema).toEqual({
+            type: 'object',
+            properties: {
+                id: { type: 'number' },
+                name: { type: 'string' },
+                email: { type: 'string' },
+                roles: {
+                    type: 'array',
+                    items: { type: 'string' },
+                },
+                isActive: { type: 'boolean' },
+            },
+            required: ['id', 'name', 'roles', 'isActive'],
+            additionalProperties: false,
+        });
+
+        const nested = toJsonSchema(
+            object({
+                company: object({
+                    name: string(),
+                    employees: array(
+                        object({
+                            id: number(),
+                            name: string(),
+                            department: string().optional(),
+                        }),
+                    ),
+                }),
+            }),
+            defOpts(t),
+        );
+
+        expect(nested.properties?.['company']);
+        const companyProps = (nested.properties['company'] as { properties?: Record<string, unknown> }).properties;
+        expect(companyProps?.['employees']);
+        const empItems = (companyProps!['employees'] as { items?: Record<string, unknown> }).items;
+        expect(empItems).toEqual({
+            type: 'object',
+            properties: {
+                id: { type: 'number' },
+                name: { type: 'string' },
+                department: { type: 'string' },
+            },
+            required: ['id', 'name'],
+            additionalProperties: false,
+        });
+
+        const mixed = toJsonSchema(
+            object({
+                id: number(),
+                name: string(),
+                tags: set(string()),
+                metadata: map(string()),
+                status: literal('active'),
+                count: nullable(number()),
+                optional: string().optional(),
+            }),
+            defOpts(t),
+        );
+
+        expect(mixed.required?.length, 6);
+        expect(mixed.properties?.['status']).toEqual({
+            type: 'string',
+            const: 'active',
+        });
+    });
+
+    test('should handle edge cases', (t) => {
+        const empty = toJsonSchema(object({}), defOpts(t));
+        expect(empty).toEqual({
+            type: 'object',
+            properties: {},
+            required: [],
+            additionalProperties: false,
+        });
+    });
+
+    test('should include descriptions', (t) => {
+        const simple = toJsonSchema(
+            object({
+                name: string().describe('The user name'),
+            }),
+            defOpts(t),
+        );
+        expect(simple.properties);
+        expect(simple.properties['name']).toEqual({
+            type: 'string',
+            description: 'The user name',
+        });
+
+        const withConstraints = toJsonSchema(
+            object({
+                age: number().min(0).max(120).describe('Age in years'),
+            }),
+            defOpts(t),
+        );
+        expect(withConstraints.properties);
+        expect(withConstraints.properties['age']).toEqual({
+            type: 'number',
+            minimum: 0,
+            maximum: 120,
+            description: 'Age in years',
+        });
+    });
+
+    // type constraints
+    test('should include number constraints', (t) => {
+        const min = toJsonSchema(object({ age: number().min(18) }), defOpts(t));
+        expect(min.properties?.['age']).toEqual({ type: 'number', minimum: 18 });
+
+        const max = toJsonSchema(object({ age: number().max(65) }), defOpts(t));
+        expect(max.properties?.['age']).toEqual({ type: 'number', maximum: 65 });
+
+        const gtNum = toJsonSchema(object({ score: number().gt(0) }), defOpts(t));
+        expect(gtNum.properties?.['score']).toEqual({ type: 'number', exclusiveMinimum: 0 });
+
+        const ltNum = toJsonSchema(object({ score: number().lt(100) }), defOpts(t));
+        expect(ltNum.properties?.['score']).toEqual({ type: 'number', exclusiveMaximum: 100 });
+
+        const multiple = toJsonSchema(object({ price: number().multipleOf(0.01) }), defOpts(t));
+        expect(multiple.properties?.['price']).toEqual({ type: 'number', multipleOf: 0.01 });
+
+        const combined = toJsonSchema(
+            object({
+                percentage: number().min(0).max(100).multipleOf(0.1),
+            }),
+            defOpts(t),
+        );
+        expect(combined.properties?.['percentage']).toEqual({
+            type: 'number',
+            minimum: 0,
+            maximum: 100,
+            multipleOf: 0.1,
+        });
+    });
+
+    test('should include string constraints', (t) => {
+        const min = toJsonSchema(object({ name: string().min(3) }), defOpts(t));
+        expect(min.properties?.['name']).toEqual({ type: 'string', minLength: 3 });
+
+        const max = toJsonSchema(object({ name: string().max(50) }), defOpts(t));
+        expect(max.properties?.['name']).toEqual({ type: 'string', maxLength: 50 });
+
+        const pattern = toJsonSchema(object({ code: string().regex(/^[A-Z]{3}$/) }), defOpts(t));
+        expect(pattern.properties?.['code']).toEqual({ type: 'string', pattern: '^[A-Z]{3}$' });
+
+        const combined = toJsonSchema(
+            object({
+                username: string()
+                    .min(3)
+                    .max(20)
+                    .regex(/^[a-z0-9_]+$/),
+            }),
+            defOpts(t),
+        );
+        expect(combined.properties?.['username']).toEqual({
+            type: 'string',
+            minLength: 3,
+            maxLength: 20,
+            pattern: '^[a-z0-9_]+$',
+        });
+    });
+
+    test('should include array constraints', (t) => {
+        const min = toJsonSchema(object({ tags: array(string()).minLength(1) }), defOpts(t));
+        expect(min.properties?.['tags']).toEqual({
+            type: 'array',
+            items: { type: 'string' },
+            minItems: 1,
+        });
+
+        const max = toJsonSchema(object({ tags: array(string()).maxLength(10) }), defOpts(t));
+        expect(max.properties?.['tags']).toEqual({
+            type: 'array',
+            items: { type: 'string' },
+            maxItems: 10,
+        });
+
+        const combined = toJsonSchema(
+            object({
+                items: array(number()).minLength(1).maxLength(100),
+            }),
+            defOpts(t),
+        );
+        expect(combined.properties?.['items']).toEqual({
+            type: 'array',
+            items: { type: 'number' },
+            minItems: 1,
+            maxItems: 100,
+        });
+    });
+
+    test('should include default values', (t) => {
+        const simple = toJsonSchema(
+            object({
+                status: string().default('pending'),
+            }),
+            defOpts(t),
+        );
+        expect(simple.properties?.['status']).toEqual({
+            type: 'string',
+            default: 'pending',
+        });
+
+        const withConstraints = toJsonSchema(
+            object({
+                count: number().min(0).max(100).default(0),
+            }),
+            defOpts(t),
+        );
+        expect(withConstraints.properties?.['count']).toEqual({
+            type: 'number',
+            minimum: 0,
+            maximum: 100,
+            default: 0,
+        });
+    });
+
+    test('should include bigint constraints', (t) => {
+        const min = toJsonSchema(object({ count: bigint().min(0n) }), defOpts(t));
+        expect(min.properties?.['count']).toEqual({ type: 'integer', minimum: 0 });
+
+        const max = toJsonSchema(object({ count: bigint().max(1000n) }), defOpts(t));
+        expect(max.properties?.['count']).toEqual({ type: 'integer', maximum: 1000 });
+
+        const gt = toJsonSchema(object({ id: bigint().gt(0n) }), defOpts(t));
+        expect(gt.properties?.['id']).toEqual({ type: 'integer', exclusiveMinimum: 0 });
+
+        const lt = toJsonSchema(object({ id: bigint().lt(9999n) }), defOpts(t));
+        expect(lt.properties?.['id']).toEqual({ type: 'integer', exclusiveMaximum: 9999 });
+
+        const multiple = toJsonSchema(object({ even: bigint().multipleOf(2n) }), defOpts(t));
+        expect(multiple.properties?.['even']).toEqual({ type: 'integer', multipleOf: 2 });
+    });
+
+    // z compatibility
+    test('should support zodToJsonSchema alias and z.* methods', (t) => {
+        const basic = z.zodToJsonSchema(object({ name: z.string() }), defOpts(t));
+        expect(basic).toEqual({
+            type: 'object',
+            properties: {
+                name: { type: 'string' },
+            },
+            required: ['name'],
+            additionalProperties: false,
+        });
+
+        const named = z.zodToJsonSchema(object({ name: z.string() }), 'User');
+        expect(named.$ref, '#/definitions/User');
+        expect(Object(named).definitions);
+        expect(Object(named).definitions.User);
+    });
+
+    test('should support object property constraints', (t) => {
+        const minProps = z.zodToJsonSchema(
+            z.object({
+                data: z.object({}).minProperties(1),
+            }),
+            defOpts(t),
+        );
+        const minDataSchema = minProps.properties?.['data'] as Record<string, unknown>;
+        expect(minDataSchema['minProperties'], 1);
+
+        const maxProps = z.zodToJsonSchema(
+            z.object({
+                data: z.object({}).maxProperties(10),
+            }),
+            defOpts(t),
+        );
+        const maxDataSchema = maxProps.properties?.['data'] as Record<string, unknown>;
+        expect(maxDataSchema['maxProperties'], 10);
+
+        const both = z.zodToJsonSchema(
+            z.object({
+                data: z.object({}).minProperties(1).maxProperties(5),
+            }),
+            defOpts(t),
+        );
+        const bothDataSchema = both.properties?.['data'] as Record<string, unknown>;
+        expect(bothDataSchema['minProperties'], 1);
+        expect(bothDataSchema['maxProperties'], 5);
+    });
+
+    // fromJsonSchema - JSON Schema to Validator conversion
+    // Helper function to parse data with the result from fromJsonSchema
+    function parseWith<T>(validatorOrSchema: ReturnType<typeof fromJsonSchema>, data: unknown): T {
+        // fromJsonSchema always returns a ValueValidator now
+        // Use valueOf() method that all ValueValidators have
+        return Object(validatorOrSchema).parse(data) as T;
+    }
+
+    test('should convert string schema', () => {
+        const schema = {
+            type: 'string' as const,
+        };
+        const validator = fromJsonSchema(schema);
+        expect(validator);
+        expect(parseWith(validator, 'hello'), 'hello');
+    });
+
+    test('should convert number schema', () => {
+        const schema = {
+            type: 'number' as const,
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 42), 42);
+        expect(parseWith(validator, 3.14), 3.14);
+    });
+
+    test('should convert integer schema', () => {
+        const schema = {
+            type: 'integer' as const,
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 42), 42);
+    });
+
+    test('should convert boolean schema', () => {
+        const schema = {
+            type: 'boolean' as const,
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, true), true);
+        expect(parseWith(validator, false), false);
+    });
+
+    test('should convert null schema', () => {
+        const schema = {
+            type: 'null' as const,
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, null), null);
+    });
+
+    test('should apply minLength constraint', () => {
+        const schema = {
+            type: 'string' as const,
+            minLength: 3,
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 'hello'), 'hello');
+        expect(() => parseWith(validator, 'ab')); // Should throw
+    });
+
+    test('should apply maxLength constraint', () => {
+        const schema = {
+            type: 'string' as const,
+            maxLength: 5,
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 'hello'), 'hello');
+    });
+
+    test('should apply pattern constraint', () => {
+        const schema = {
+            type: 'string' as const,
+            pattern: '^[a-z]+$',
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 'hello'), 'hello');
+    });
+
+    test('should apply format constraints', () => {
+        const emailSchema = {
+            type: 'string' as const,
+            format: 'email' as const,
+        } as const;
+        const emailValidator = fromJsonSchema(emailSchema);
+        expect(parseWith(emailValidator, 'test@example.com'), 'test@example.com');
+
+        const urlSchema = {
+            type: 'string' as const,
+            format: 'url' as const,
+        } as const;
+        const urlValidator = fromJsonSchema(urlSchema);
+        expect(parseWith(urlValidator, 'https://example.com'), 'https://example.com');
+    });
+
+    test('should apply date-time format constraints', () => {
+        const dateTimeSchema = {
+            type: 'string' as const,
+            format: 'date-time' as const,
+        };
+        const dateTimeValidator = fromJsonSchema(dateTimeSchema);
+        expect(parseWith(dateTimeValidator, '2023-10-24T12:30:00Z'), '2023-10-24T12:30:00Z');
+        expect(parseWith(dateTimeValidator, '2023-10-24T12:30:00.123Z'), '2023-10-24T12:30:00.123Z');
+        expect(parseWith(dateTimeValidator, '2023-10-24T12:30:00+05:30'), '2023-10-24T12:30:00+05:30');
+        expect(() => parseWith(dateTimeValidator, '2023-10-24'), /not a valid ISO 8601 datetime/);
+        expect(() => parseWith(dateTimeValidator, 'not-a-datetime'), /not a valid ISO 8601 datetime/);
+    });
+
+    test('should apply date format constraints', () => {
+        const dateSchema = {
+            type: 'string' as const,
+            format: 'date' as const,
+        };
+        const dateValidator = fromJsonSchema(dateSchema);
+        expect(parseWith(dateValidator, '2023-10-24'), '2023-10-24');
+        expect(() => parseWith(dateValidator, '2023-10-24T12:30:00Z'), /not a valid ISO 8601 date/);
+        expect(() => parseWith(dateValidator, 'not-a-date'), /not a valid ISO 8601 date/);
+    });
+
+    test('should apply time format constraints', () => {
+        const timeSchema = {
+            type: 'string' as const,
+            format: 'time' as const,
+        };
+        const timeValidator = fromJsonSchema(timeSchema);
+        expect(parseWith(timeValidator, '12:30:00'), '12:30:00');
+        expect(parseWith(timeValidator, '12:30:00.123'), '12:30:00.123');
+        expect(() => parseWith(timeValidator, '2023-10-24T12:30:00Z'), /not a valid ISO 8601 time/);
+        expect(() => parseWith(timeValidator, 'not-a-time'), /not a valid ISO 8601 time/);
+    });
+
+    test('should apply minimum constraint', () => {
+        const schema = {
+            type: 'number' as const,
+            minimum: 0,
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 0), 0);
+        expect(parseWith(validator, 10), 10);
+    });
+
+    test('should apply maximum constraint', () => {
+        const schema = {
+            type: 'number' as const,
+            maximum: 100,
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 100), 100);
+        expect(parseWith(validator, 50), 50);
+    });
+
+    test('should apply exclusive bounds (draft 2020-12 style)', () => {
+        const schema = {
+            type: 'number' as const,
+            exclusiveMinimum: 0,
+            exclusiveMaximum: 100,
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 50), 50);
+    });
+
+    test('should apply multipleOf constraint', () => {
+        const schema = {
+            type: 'number' as const,
+            multipleOf: 5,
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 10), 10);
+        expect(parseWith(validator, 15), 15);
+    });
+
+    test('should convert simple object schema', () => {
+        const schema = {
+            type: 'object' as const,
+            properties: {
+                name: { type: 'string' as const },
+                age: { type: 'number' as const },
+            },
+            required: ['name', 'age'],
+        };
+        const validator = fromJsonSchema(schema);
+        const result = parseWith<{ name: string; age: number }>(validator, { name: 'John', age: 30 });
+        expect(result).toEqual({ name: 'John', age: 30 });
+    });
+
+    test('should handle optional properties', () => {
+        const schema = {
+            type: 'object' as const,
+            properties: {
+                name: { type: 'string' as const },
+                age: { type: 'number' as const },
+            },
+            required: ['name'],
+        };
+        const validator = fromJsonSchema(schema);
+        const result = parseWith<{ name: string }>(validator, { name: 'John' });
+        expect(result.name === 'John');
+    });
+
+    test('should handle nested objects', () => {
+        const schema = {
+            type: 'object' as const,
+            properties: {
+                user: {
+                    type: 'object' as const,
+                    properties: {
+                        name: { type: 'string' as const },
+                        email: { type: 'string' as const, format: 'email' as const },
+                    },
+                    required: ['name', 'email'],
+                },
+            },
+            required: ['user'],
+        };
+        const validator = fromJsonSchema(schema);
+        const result = parseWith<{ user: { name: string } }>(validator, {
+            user: { name: 'John', email: 'john@example.com' },
+        });
+        expect(result.user.name === 'John');
+    });
+
+    test('should convert array schema', () => {
+        const schema = {
+            type: 'array' as const,
+            items: { type: 'string' as const },
+        };
+        const validator = fromJsonSchema(schema);
+        const result = parseWith<string[]>(validator, ['a', 'b', 'c']);
+        expect(result, ['a', 'b', 'c']);
+    });
+
+    test('should apply minItems constraint', () => {
+        const schema = {
+            type: 'array' as const,
+            items: { type: 'string' as const },
+            minItems: 2,
+        };
+        const validator = fromJsonSchema(schema);
+        const result = parseWith<string[]>(validator, ['a', 'b']);
+        expect(result, ['a', 'b']);
+    });
+
+    test('should apply maxItems constraint', () => {
+        const schema = {
+            type: 'array' as const,
+            items: { type: 'number' as const },
+            maxItems: 3,
+        };
+        const validator = fromJsonSchema(schema);
+        const result = parseWith<number[]>(validator, [1, 2, 3]);
+        expect(result, [1, 2, 3]);
+    });
+
+    test('should convert enum to literal union', () => {
+        const schema = {
+            enum: ['red', 'green', 'blue'],
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 'red'), 'red');
+        expect(parseWith(validator, 'green'), 'green');
+    });
+
+    test('should handle single enum value', () => {
+        const schema = {
+            enum: ['only'],
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 'only'), 'only');
+    });
+
+    test('should handle numeric enum', () => {
+        const schema = {
+            enum: [1, 2, 3],
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 1), 1);
+        expect(parseWith(validator, 2), 2);
+    });
+
+    test('should convert const to literal', () => {
+        const schema = {
+            const: 'fixed-value',
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 'fixed-value'), 'fixed-value');
+    });
+
+    test('should handle nullable type', () => {
+        const schema = {
+            type: ['string', 'null'] as ('string' | 'null')[],
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 'hello'), 'hello');
+        expect(parseWith(validator, null), null);
+    });
+
+    test('should convert anyOf to union', () => {
+        const schema = {
+            anyOf: [{ type: 'string' as const }, { type: 'number' as const }],
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 'hello'), 'hello');
+        expect(parseWith(validator, 42), 42);
+    });
+
+    test('should convert oneOf to union', () => {
+        const schema = {
+            oneOf: [{ type: 'string' as const }, { type: 'number' as const }],
+        };
+        const validator = fromJsonSchema(schema);
+        expect(parseWith(validator, 'hello'), 'hello');
+        expect(parseWith(validator, 42), 42);
+    });
+
+    test('should convert allOf with object schemas', () => {
+        const schema = {
+            allOf: [
+                {
+                    type: 'object' as const,
+                    properties: { name: { type: 'string' as const } },
+                    required: ['name'],
+                },
+                {
+                    type: 'object' as const,
+                    properties: { age: { type: 'number' as const } },
+                    required: ['age'],
+                },
+            ] as JsonSchema[],
+        } as const;
+        const validator = fromJsonSchema(schema);
+        const result = parseWith<{ name: string; age: number }>(validator, { name: 'John', age: 30 });
+        expect(result.name === 'John' && result.age === 30);
+    });
+
+    test('should handle true schema (accepts anything)', () => {
+        const trueSchema = true;
+        const validator = fromJsonSchema(trueSchema);
+        expect(parseWith(validator).toEqual({ any: 'thing' }));
+    });
+
+    test('should accept draft 2019-09', () => {
+        const schema = {
+            // biome-ignore lint/style/useNamingConvention: JSON Schema standard property
+            $schema: 'https://json-schema.org/draft/2019-09/schema',
+            type: 'string' as const,
+        };
+        const validator = fromJsonSchema(schema);
+        expect(validator);
+    });
+
+    test('should accept draft 2020-12', () => {
+        const schema = {
+            // biome-ignore lint/style/useNamingConvention: JSON Schema standard property
+            $schema: 'https://json-schema.org/draft/2020-12/schema',
+            type: 'string' as const,
+        };
+        const validator = fromJsonSchema(schema);
+        expect(validator);
+    });
+
+    test('should handle round-trip for basic types', () => {
+        const original = object({
+            name: string(),
+            age: number().gte(0),
+            active: boolean(),
+        });
+
+        const jsonSchema = toJsonSchema(original, {
+            includeSchemaVersion: true,
+            target: 'openApi3', // OpenAPI 3 uses draft 2020-12
+        });
+        const validator = fromJsonSchema(jsonSchema, { strictVersion: false });
+
+        const testData = { name: 'John', age: 30, active: true };
+        const result = parseWith<typeof testData>(validator, testData);
+        expect(result, testData);
+    });
+
+    test('should handle round-trip for nested objects', () => {
+        const original = object({
+            user: object({
+                name: string(),
+                email: string().email(),
+            }),
+        });
+
+        const jsonSchema = toJsonSchema(original, {
+            includeSchemaVersion: true,
+            target: 'openApi3',
+        });
+        const validator = fromJsonSchema(jsonSchema, { strictVersion: false });
+
+        const testData = { user: { name: 'John', email: 'john@example.com' } };
+        const result = parseWith<{ user: { name: string } }>(validator, testData);
+        expect(result.user.name === 'John');
+    });
+
+    test('should handle round-trip for arrays', () => {
+        const original = object({
+            tags: array(string()).minLength(1),
+        });
+
+        const jsonSchema = toJsonSchema(original, {
+            includeSchemaVersion: true,
+            target: 'openApi3',
+        });
+        const validator = fromJsonSchema(jsonSchema, { strictVersion: false });
+
+        const testData = { tags: ['typescript', 'testing'] };
+        const result = parseWith<{ tags: string[] }>(validator, testData);
+        expect(result.tags, testData.tags);
+    });
+});

@@ -1,0 +1,8 @@
+{
+  "name": "@libs/zody",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@libs/utils": "workspace:*"
+  }
+}

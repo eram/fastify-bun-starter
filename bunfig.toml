@@ -1,0 +1,7 @@
+[test]
+# Preload Bun-version guard and DOM APIs for tests
+# Note: happy-dom is configured to preserve Bun's native fetch/EventTarget
+preload = ["./scripts/version-guard.ts", "./scripts/happy-dom.ts"]
+
+# Coverage configuration
+coverageSkipTestFiles = true
