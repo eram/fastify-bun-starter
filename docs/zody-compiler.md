@@ -73,10 +73,10 @@ you want:
 
 So compilation means:
 
-- freeze the schema shape
 - resolve conflicts
 - derive effective type/rules
 - pre-build fast execution closures or generated functions
+- freeze the schema shape
 
 
 ## Execution strategy
@@ -247,8 +247,4 @@ That sequence minimizes breakage and gives you checkpoints.
 ## One-sentence summary
 
 What you are doing is: **turning `zody` into a metadata-driven schema compiler where each validator node can compile itself, parent validators compose compiled children, and class validation uses a cached compiled root instead of interpreting schema rules on every call**.[^1]
-
-<div align="center">⁂</div>
-
-[^1]: zody.ts
 

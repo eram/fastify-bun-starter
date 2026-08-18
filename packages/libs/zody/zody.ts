@@ -1,10 +1,17 @@
 // Import ErrorEx for ZodyError
 import { ErrorEx } from '@libs/utils/error';
 
+// Compiled validator node for fast execution
+type CompiledNode<T = any> = {
+  validate(input: unknown): boolean;
+  parse(input: unknown): T;
+};
+
 // Local Validator type - zody is self-contained with no external dependencies
 type Validator<T = any> = {
   parse(input: unknown): T;
   safeParse(input: unknown): { success: boolean; data?: T; error?: Error };
+  compile?(): CompiledNode<T>;
   optional(): Validator<T | undefined>;
   nullable(): Validator<T | null>;
   default(value: T): Validator<T>;
@@ -249,6 +256,127 @@ function createValidator<T>(
     }
   };
 
+  // Compile into a specialized fast path
+  validator.compile = (): CompiledNode<T> => {
+    const compiledParse = (input: unknown): T => {
+      const isInitializing = (globalThis as any).__z_initializing__;
+      if (isInitializing && input === undefined) return undefined as T;
+
+      if (options.optional && input === undefined) return undefined as T;
+      if (options.default !== undefined && input === undefined) return options.default;
+      if (input === null && !options.optional) throw new ZodyError(`Expected ${typeName}, received null`);
+
+      let result = parseFn(input);
+
+      // String transforms (apply before length checks)
+      if (typeof result === 'string') {
+        if (options.trim) result = (result as any).trim();
+        if (options.toLowerCase) result = (result as any).toLowerCase();
+        if (options.toUpperCase) result = (result as any).toUpperCase();
+      }
+
+      // Format validations for strings
+      if (typeof result === 'string') {
+        if (options.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result)) {
+          throw new ZodyError(`Expected valid email, received ${result}`);
+        }
+        if (options.url && !testFormat(result, 'url')) {
+          throw new ZodyError(`Expected valid URL, received ${result}`);
+        }
+        if (options.uuid && !testFormat(result, 'uuid')) {
+          throw new ZodyError(`Expected valid UUID, received ${result}`);
+        }
+        if (options.hostname && !testFormat(result, 'hostname')) {
+          throw new ZodyError(`Expected valid hostname, received ${result}`);
+        }
+        if (options.ipv4 && !testFormat(result, 'ipv4')) {
+          throw new ZodyError(`Expected valid IPv4, received ${result}`);
+        }
+        if (options.ipv6 && !testFormat(result, 'ipv6')) {
+          throw new ZodyError(`Expected valid IPv6, received ${result}`);
+        }
+        if (options.jwt && !testFormat(result, 'jwt')) {
+          throw new ZodyError(`Expected valid JWT, received ${result}`);
+        }
+        if (options.base64 && !testFormat(result, 'base64')) {
+          throw new ZodyError(`Expected valid base64, received ${result}`);
+        }
+        if (options.hex && !testFormat(result, 'hex')) {
+          throw new ZodyError(`Expected valid hex, received ${result}`);
+        }
+        if (options.regex) {
+          const pattern = typeof options.regex.pattern === 'string' ? new RegExp(options.regex.pattern) : options.regex.pattern;
+          if (!pattern.test(result)) {
+            throw new ZodyError(options.regex.message || `Expected to match pattern ${pattern.source}, received ${result}`);
+          }
+        }
+
+        // For strings, min/max can mean minLength/maxLength
+        if (options.min !== undefined && result.length < Number(options.min)) {
+          throw new ZodyError(`Expected string with min length ${options.min}, received ${result.length}`);
+        }
+        if (options.max !== undefined && result.length > Number(options.max)) {
+          throw new ZodyError(`Expected string with max length ${options.max}, received ${result.length}`);
+        }
+
+        // Length validations for strings (minLength/maxLength are more explicit)
+        if (options.minLength !== undefined && result.length < options.minLength) {
+          throw new ZodyError(`Expected string with min length ${options.minLength}, received ${result.length}`);
+        }
+        if (options.maxLength !== undefined && result.length > options.maxLength) {
+          throw new ZodyError(`Expected string with max length ${options.maxLength}, received ${result.length}`);
+        }
+        if (options.length !== undefined && result.length !== options.length) {
+          throw new ZodyError(`Expected string with length ${options.length}, received ${result.length}`);
+        }
+      }
+
+      // Numeric constraints
+      if (typeof result === 'number' || typeof result === 'bigint') {
+        if (options.int && typeof result === 'number' && !Number.isInteger(result)) {
+          throw new ZodyError(`Expected integer, received decimal`);
+        }
+        if (options.float && typeof result === 'number' && Number.isInteger(result)) {
+          // Allow floats that happen to be integers
+        }
+        if (options.min !== undefined && result < (options.min as any)) {
+          throw new ZodyError(`Expected >= ${options.min}, received ${result}`);
+        }
+        if (options.max !== undefined && result > (options.max as any)) {
+          throw new ZodyError(`Expected <= ${options.max}, received ${result}`);
+        }
+        if (options.gte !== undefined && result < (options.gte as any)) {
+          throw new ZodyError(`Expected >= ${options.gte}, received ${result}`);
+        }
+        if (options.lte !== undefined && result > (options.lte as any)) {
+          throw new ZodyError(`Expected <= ${options.lte}, received ${result}`);
+        }
+        if (options.gt !== undefined && result <= (options.gt as any)) {
+          throw new ZodyError(`Expected > ${options.gt}, received ${result}`);
+        }
+        if (options.lt !== undefined && result >= (options.lt as any)) {
+          throw new ZodyError(`Expected < ${options.lt}, received ${result}`);
+        }
+      }
+
+      return result;
+    };
+
+    return {
+      validate(input: unknown): boolean {
+        try {
+          compiledParse(input);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      parse(input: unknown): T {
+        return compiledParse(input);
+      },
+    };
+  };
+
   // Chainable methods
   validator.optional = () => createValidator(typeName, parseFn, { ...options, optional: true });
   validator.nullable = () => createValidator(typeName, (v) => v === null ? null : parseFn(v), options);
@@ -315,16 +443,38 @@ const dateValidator = () => createValidator('Date', (v) => {
   throw new Error(`Expected Date, received ${typeof v}`);
 });
 
-const arrayValidator = (inner: Validator<any> = { parse: (v) => v, safeParse: (v) => ({ success: true, data: v }) } as any) =>
-  createValidator('array', (v) => {
+const arrayValidator = (inner: Validator<any> = { parse: (v) => v, safeParse: (v) => ({ success: true, data: v }) } as any) => {
+  const validator = createValidator('array', (v) => {
     if (!Array.isArray(v)) throw new Error(`Expected array, received ${typeof v}`);
     return v.map((item) => inner.parse(item));
   });
 
+  const baseCompile = validator.compile;
+  validator.compile = () => {
+    const compiled = inner.compile?.() ?? { validate: (v: unknown) => true, parse: (v: unknown) => v };
+    const baseNode = baseCompile();
+
+    return {
+      validate(input: unknown): boolean {
+        if (!Array.isArray(input)) return false;
+        for (const item of input) {
+          if (!compiled.validate(item)) return false;
+        }
+        return true;
+      },
+      parse(input: unknown) {
+        return baseNode.parse(input);
+      },
+    };
+  };
+
+  return validator;
+};
+
 const unknownValidator = () => createValidator('unknown', (v) => v);
 
-const objectValidator = (shape: Record<string, Validator<any>>) =>
-  createValidator('object', (v) => {
+const objectValidator = (shape: Record<string, Validator<any>>) => {
+  const validator = createValidator('object', (v) => {
     if (typeof v !== 'object' || v === null) throw new Error(`Expected object, received ${typeof v}`);
     const result: any = {};
     for (const [key, validator] of Object.entries(shape)) {
@@ -332,6 +482,33 @@ const objectValidator = (shape: Record<string, Validator<any>>) =>
     }
     return result;
   });
+
+  const baseCompile = validator.compile;
+  validator.compile = () => {
+    const compiledFields: Array<[string, CompiledNode]> = [];
+    for (const [key, fieldValidator] of Object.entries(shape)) {
+      const compiled = fieldValidator.compile?.() ?? { validate: (v: unknown) => true, parse: (v: unknown) => v };
+      compiledFields.push([key, compiled]);
+    }
+
+    const baseNode = baseCompile();
+
+    return {
+      validate(input: unknown): boolean {
+        if (typeof input !== 'object' || input === null) return false;
+        for (const [key, compiled] of compiledFields) {
+          if (!compiled.validate((input as any)[key])) return false;
+        }
+        return true;
+      },
+      parse(input: unknown) {
+        return baseNode.parse(input);
+      },
+    };
+  };
+
+  return validator;
+};
 
 export type ZodyInfer<T extends { [PHANTOM]?: any }> = T extends { [PHANTOM]?: infer O } ? O : never;
 export type ZodyInferInput<T extends { [PHANTOM]?: any }> = T extends { [PHANTOM]?: { input: infer I } } ? I : never;
@@ -654,7 +831,10 @@ function toZodFromSpec(spec: ChainSpec): any {
 }
 
 function makeCompiledValidate(schema: any) {
-  return (input: unknown) => schema.safeParse(input).success;
+  const compiled = schema.compile?.();
+  return compiled
+    ? (input: unknown) => compiled.validate(input)
+    : (input: unknown) => schema.safeParse(input).success;
 }
 
 function buildArtifacts(ctor: any) {
@@ -672,10 +852,11 @@ function buildArtifacts(ctor: any) {
   return cache;
 }
 
-function Schema(options?: { inferDefault?: boolean }) {
+function Schema(options?: { inferDefault?: boolean; autocompile?: boolean }) {
   return function <T extends Ctor>(target: T, _context: ClassDecoratorContext<T>) {
     const meta = getClassMeta(target);
     meta.inferDefault = options?.inferDefault ?? true;
+    const shouldAutocompile = options?.autocompile ?? false;
 
     class ZodyClass extends (target as any) {
       static toZod() {
@@ -763,6 +944,13 @@ function Schema(options?: { inferDefault?: boolean }) {
           }
         }
       }
+    }
+
+    // Trigger autocompile if requested
+    if (shouldAutocompile) {
+      setImmediate(() => {
+        buildArtifacts(ZodyClass);
+      });
     }
 
     return ZodyClass as any;
@@ -905,7 +1093,7 @@ const baseDecorator = makeDecorator({ ops: [] });
 
 export const z: any = baseDecorator;
 
-// Add Schema, toZod, and functional-layer exports
+// Add Schema and toZod - keep the lazy getters from makeDecorator for decorators
 Object.defineProperties(z, {
   Schema: { value: Schema, writable: false, enumerable: true, configurable: false },
   toZod: {
@@ -916,14 +1104,6 @@ Object.defineProperties(z, {
     enumerable: true,
     configurable: false,
   },
-  string: { value: string, writable: false, enumerable: true, configurable: false },
-  number: { value: number, writable: false, enumerable: true, configurable: false },
-  boolean: { value: boolean, writable: false, enumerable: true, configurable: false },
-  bigint: { value: bigint, writable: false, enumerable: true, configurable: false },
-  date: { value: date, writable: false, enumerable: true, configurable: false },
-  array: { value: array, writable: false, enumerable: true, configurable: false },
-  object: { value: object, writable: false, enumerable: true, configurable: false },
-  unknown: { value: unknown, writable: false, enumerable: true, configurable: false },
 });
 
 export namespace z {
