@@ -627,7 +627,7 @@ function _tsCtorToRoot(ctor: object): RootKind | undefined {
 function makeDecorator(spec: ChainSpec): DecoratorFn {
     const plus = (op: Op) => makeDecorator({ ops: [...spec.ops, op] });
 
-    const dec: any = (_value: undefined, context: ClassFieldDecoratorContext) => {
+    const dec: unknown = (_value: undefined, context: ClassFieldDecoratorContext) => {
         const fieldName = String(context.name);
 
         // Store the decorator spec on the context metadata for later retrieval
@@ -882,8 +882,8 @@ function applyOps(schema: any, field: FieldMeta): any {
     return schema;
 }
 
-function toZodNode(field: FieldMeta): Validator<any> {
-    let schema: Validator<any>;
+function toZodNode(field: FieldMeta): Validator<unknown> {
+    let schema: Validator<unknown>;
     switch (field.inferredType) {
         case 'string':
             schema = stringValidator();
@@ -1189,7 +1189,7 @@ export type ZodyCtor<T = any> = {
 
 const baseDecorator = makeDecorator({ ops: [] });
 
-export const z: any = baseDecorator;
+export const z: unknown = baseDecorator;
 
 // Add Schema and toZod - keep the lazy getters from makeDecorator for decorators
 Object.defineProperties(z, {
