@@ -54,9 +54,7 @@ describe('ApiClient', () => {
     });
 
     test('fail after max retries', async (_t) => {
-        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(
-            async () => new Response('Error', { status: 500 }),
-        );
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => new Response('Error', { status: 500 }));
         try {
             const client = new ApiClient(baseURL, { maxTries: 2, baseDelay: 1 });
             const retry = client.fetch('test-api');
@@ -326,9 +324,7 @@ describe('ApiClient', () => {
     });
 
     test('retry handles catch callback', async (_t) => {
-        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(
-            async () => new Response('Error', { status: 500 }),
-        );
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => new Response('Error', { status: 500 }));
         try {
             const client = new ApiClient(baseURL, { maxTries: 1, baseDelay: 1 });
             const retry = client.fetch('test-api');

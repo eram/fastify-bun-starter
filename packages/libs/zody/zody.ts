@@ -249,7 +249,7 @@ function createValidator<T>(
         return result;
     };
 
-    const validator: any = (input: unknown) => parse(input);
+    const validator: Validator<T> = (input: unknown) => parse(input);
     validator.parse = parse;
     validator.safeParse = (input: unknown) => {
         try {
@@ -464,7 +464,9 @@ const dateValidator = () =>
         return coerced;
     });
 
-const arrayValidator = (inner: Validator<any> = { parse: (v) => v, safeParse: (v) => ({ success: true, data: v }) } as unknown) => {
+const arrayValidator = (
+    inner: Validator<unknown> = { parse: (v) => v, safeParse: (v) => ({ success: true, data: v }) } as unknown,
+) => {
     const validator = createValidator('array', (v) => {
         if (!Array.isArray(v)) throw new Error(`Expected array, received ${typeof v}`);
         return v.map((item) => inner.parse(item));
@@ -494,10 +496,10 @@ const arrayValidator = (inner: Validator<any> = { parse: (v) => v, safeParse: (v
 
 const unknownValidator = () => createValidator('unknown', (v) => v);
 
-const objectValidator = (shape: Record<string, Validator<any>>) => {
+const objectValidator = (shape: Record<string, Validator<unknown>>) => {
     const validator = createValidator('object', (v) => {
         if (typeof v !== 'object' || v === null) throw new Error(`Expected object, received ${typeof v}`);
-        const result: any = {};
+        const result: Record<string, unknown> = {};
         for (const [key, validator] of Object.entries(shape)) {
             result[key] = validator.parse((v as unknown)[key]);
         }
@@ -584,7 +586,7 @@ type ClassMeta = {
     sealed?: boolean;
 };
 
-type DecoratorFn = ((value: undefined, context: ClassFieldDecoratorContext) => void) & Record<string, any>;
+type DecoratorFn = ((value: undefined, context: ClassFieldDecoratorContext) => void) & Record<string, unknown>;
 
 // Type inference: extract the parsed/validated type from the schema validator
 type InferIn<T extends Ctor> = T extends { toZod(): Validator<infer S> } ? Parameters<Validator<S>['parse']>[0] : never;
@@ -602,7 +604,7 @@ function getClassMeta(ctor: object): ClassMeta {
     return ctor[META_KEY] as ClassMeta;
 }
 
-function getOrCreateFieldMeta(owner: any, key: string): FieldMeta {
+function getOrCreateFieldMeta(owner: object, key: string): FieldMeta {
     const meta = getClassMeta(owner.constructor ?? owner);
     let field = meta.fields.get(key);
     if (!field) {

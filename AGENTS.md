@@ -54,16 +54,14 @@ This file provides guidance to AI coding agents when working with code in this r
 ### Fastify Framework
 
 - The project uses Fastify as the HTTP framework
-- Use the Validator library from src\lib for runtime type validation and schema definitions
+- Use the Zody library with decorators from packages/libs for runtime type validation and schema definitions
 - CLI support using Node.js built-in `node:util.parseArgs`
 - Plain console logging (no external logging library)
 - HTTP endpoints for API functionality
 
 ### Testing Patterns
 
-- **Test Framework**: Use Bun's native test framework (`bun:test`) — `describe`, `test`, `expect`, `mock`, `spyOn`, `beforeEach`/`afterEach`.
-  - No Vitest/Jest needed; this is Bun's own runner, not the `node:test` compatibility shim (that shim has known gaps — see `oven-sh/bun#5090` — which is why we moved off it).
-  - Use `mock(...)`/`spyOn(...)` from `bun:test` for mocks, and always validate the mock was actually called (check `.mock.calls`).
+- **Test Framework**: Use ONLY Bun's native test framework (`bun:test`) —  No Vitest/Jest/`node:test`.
 - **Unit Test Files**: `*.test.ts` file next to its code-related source code file.
 - **API testing**: For HTTP API testing use Fastify's `inject()` method.
 - **Integration Tests** (ci/): CLI tests using child_process to run the server process.
