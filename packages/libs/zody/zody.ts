@@ -934,7 +934,7 @@ function makeCompiledValidate(schema: object) {
 function buildArtifacts(ctor: object) {
     if (ctor[CACHE]) return ctor[CACHE];
     const meta = gatherMeta(ctor);
-    const shape: Record<string, any> = {};
+    const shape: Record<string, unknown> = {};
     for (const [key, raw] of meta.fields) {
         const norm = normalizeField(raw, meta.inferDefault);
         shape[key] = toZodNode(norm);
@@ -965,9 +965,9 @@ function Schema(options?: { inferDefault?: boolean; autocompile?: boolean }) {
             static parse(input: unknown) {
                 return ZodyClass.toZod().parse(input);
             }
-            static defs(includeSchemaVersion = true): Record<string, any> {
+            static defs(includeSchemaVersion = true): Record<string, unknown> {
                 const metadata = gatherMeta(ZodyClass);
-                const properties: Record<string, any> = {};
+                const properties: Record<string, unknown> = {};
                 const required: string[] = [];
 
                 for (const [key, field] of metadata.fields) {
@@ -985,7 +985,7 @@ function Schema(options?: { inferDefault?: boolean; autocompile?: boolean }) {
                     }
                 }
 
-                const schema: Record<string, any> = {
+                const schema: Record<string, unknown> = {
                     type: 'object',
                     properties,
                 };
@@ -1051,8 +1051,8 @@ function Schema(options?: { inferDefault?: boolean; autocompile?: boolean }) {
     };
 }
 
-function buildPropertySchema(field: FieldMeta): Record<string, any> {
-    const schema: Record<string, any> = {};
+function buildPropertySchema(field: FieldMeta): Record<string, unknown> {
+    const schema: Record<string, unknown> = {};
 
     // Determine base type
     const isOptional = field.ops.some((op) => op.kind === 'optional');
@@ -1184,7 +1184,7 @@ export type ZodyCtor<T = any> = {
     parse(input: unknown): T;
     safeParse(input: unknown): { success: boolean; data?: T; error?: Error };
     toZod(): Validator<T>;
-    defs(includeSchemaVersion?: boolean): Record<string, any>;
+    defs(includeSchemaVersion?: boolean): Record<string, unknown>;
 };
 
 const baseDecorator = makeDecorator({ ops: [] });
