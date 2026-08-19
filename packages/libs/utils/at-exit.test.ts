@@ -35,8 +35,8 @@ describe.skip('atExit', () => {
     });
 
     test('trigger timeout exit on a long callback', async () => {
-        const save = process.env['AT_TERMINATE_TIMEOUT'];
-        process.env['AT_TERMINATE_TIMEOUT'] = '2';
+        const save = process.env.AT_TERMINATE_TIMEOUT;
+        process.env.AT_TERMINATE_TIMEOUT = '2';
         const cb1 = mock(() => sleep(10)); // should trigger the timeout
         const exit = spyOn(process, 'exit').mockImplementation(() => {
             // should be called once from signal and once from timeout
@@ -54,7 +54,7 @@ describe.skip('atExit', () => {
         } finally {
             remove1();
             exit.mockRestore();
-            process.env['AT_TERMINATE_TIMEOUT'] = save;
+            process.env.AT_TERMINATE_TIMEOUT = save;
         }
     });
 });

@@ -76,7 +76,6 @@ export class Immutable extends Object {
         return safeSync(() => Immutable.parse<T>(text, reviver));
     }
 
-
     /** Freezes object and sets mutating methods to undefined (non-enumerable) */
     static override freeze<T extends object>(obj: T): Readonly<T> {
         if (obj != null && typeof obj === 'object' && Object.getPrototypeOf(obj)?.constructor?.name === 'Object') {

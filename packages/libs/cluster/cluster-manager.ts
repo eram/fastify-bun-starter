@@ -13,8 +13,8 @@ import cluster, { type Worker } from 'node:cluster';
 import type { PathLike } from 'node:fs';
 import os from 'node:os';
 import { isDebugging } from '@libs/utils/debugger';
-import { createLogger, type LogFn, type Logger, LogLevel } from '@libs/utils/logger';
 import { Env } from '@libs/utils/env';
+import { createLogger, type LogFn, type Logger, LogLevel } from '@libs/utils/logger';
 
 /**
  * Default configuration options for ClusterManager

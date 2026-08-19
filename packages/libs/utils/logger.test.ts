@@ -1,5 +1,5 @@
-import { format } from 'node:util';
 import { describe, expect, mock, spyOn, test } from 'bun:test';
+import { format } from 'node:util';
 import { sleep } from '@libs/utils/time';
 import * as logger from './logger';
 import { warn } from './logger';
@@ -77,21 +77,21 @@ describe('logger tests', () => {
 
     test('json logger with params', () => {
         const testName = 'json logger with params';
-        const save = process.env['LOG_FORMAT'];
+        const save = process.env.LOG_FORMAT;
         try {
             const nullFn = mock((obj: Record<string, unknown>) => {
                 expect(typeof obj).toBe('object');
-                expect(typeof obj['message']).toBe('string');
-                expect(obj['message']).toBe('foo:bar');
-                expect(obj['ctx']).toBe(testName);
+                expect(typeof obj.message).toBe('string');
+                expect(obj.message).toBe('foo:bar');
+                expect(obj.ctx).toBe(testName);
             });
 
-            process.env['LOG_FORMAT'] = 'json';
+            process.env.LOG_FORMAT = 'json';
             const log = logger.createLogger(testName, logger.LogLevel.INFO, makeConsole(nullFn));
             log.log('%s:%s', 'foo', 'bar');
             expect(nullFn.mock.calls.length).toBe(1);
         } finally {
-            process.env['LOG_FORMAT'] = save;
+            process.env.LOG_FORMAT = save;
         }
     });
 
@@ -102,12 +102,12 @@ describe('logger tests', () => {
             expect(str).toMatch(/\d{1,2}T\d{1,2}:\d{1,2}:\d{1,2}\.\d{1,3}Z/);
         });
         try {
-            process.env['LOG_ADD_TIME'] = 'true';
-            process.env['LOG_FORMAT'] = 'line';
+            process.env.LOG_ADD_TIME = 'true';
+            process.env.LOG_FORMAT = 'line';
             // Use a custom console object instead of mocking the global one
             const customConsole = makeConsole(fn);
             const log = logger.createLogger(testName, logger.LogLevel.INFO, customConsole);
-            delete process.env['LOG_ADD_TIME'];
+            delete process.env.LOG_ADD_TIME;
             log.info('logs with time');
             expect(fn.mock.calls.length).toBe(1);
         } finally {
@@ -157,32 +157,32 @@ describe('logger tests', () => {
 
     test('createLogger LOG_LEVEL is normalized', () => {
         const testName = 'createLogger LOG_LEVEL is normalized';
-        process.env['LOG_LEVEL'] = 'silly';
+        process.env.LOG_LEVEL = 'silly';
         const log = logger.createLogger(testName);
         expect(log.conf.level).toBe(logger.LogLevel.DEBUG);
-        delete process.env['LOG_LEVEL'];
+        delete process.env.LOG_LEVEL;
     });
 
     test('createLogger uses LOG_LEVEL as number', () => {
         const testName = 'createLogger uses LOG_LEVEL as number';
-        process.env['LOG_LEVEL'] = '2';
+        process.env.LOG_LEVEL = '2';
         const log = logger.createLogger(testName);
         expect(log.conf.level).toBe(logger.LogLevel.CRITICAL);
-        delete process.env['LOG_LEVEL'];
+        delete process.env.LOG_LEVEL;
     });
 
     test('createLogger with/without time', () => {
         const testName = 'createLogger with/without time';
         const nullFn = mock();
-        delete process.env['LOG_ADD_TIME'];
+        delete process.env.LOG_ADD_TIME;
         const log0 = logger.createLogger(`${testName}0`, logger.LogLevel.INFO, makeConsole(nullFn));
         log0.info('should not have time');
 
         // add time thru env var
-        process.env['LOG_ADD_TIME'] = 'true';
+        process.env.LOG_ADD_TIME = 'true';
         const log1 = logger.createLogger(`${testName}1`, logger.LogLevel.INFO, makeConsole(nullFn));
         log1.info('should have time');
-        delete process.env['LOG_ADD_TIME'];
+        delete process.env.LOG_ADD_TIME;
 
         // add time thru option
         const log2 = logger.createLogger(`${testName}2`, logger.LogLevel.INFO, makeConsole(nullFn), { addTime: true });
@@ -324,9 +324,9 @@ describe('logger tests', () => {
         const testName = 'logger with object pool';
         const nullFn = mock((obj: Record<string, unknown>) => {
             expect(typeof obj).toBe('object');
-            expect(typeof obj['message']).toBe('string');
-            expect(obj['message']).toBe('foo:bar');
-            expect(obj['ctx']).toBe(testName);
+            expect(typeof obj.message).toBe('string');
+            expect(obj.message).toBe('foo:bar');
+            expect(obj.ctx).toBe(testName);
         });
 
         const log = logger.createLogger(testName, logger.LogLevel.INFO, makeConsole(nullFn), {
@@ -396,9 +396,9 @@ describe('logger tests', () => {
 
     test('speed logger a transport for createLogger', async () => {
         const testName = 'speed logger a transport for createLogger';
-        const save = process.env['LOG_FORMAT'];
+        const save = process.env.LOG_FORMAT;
         try {
-            process.env['LOG_FORMAT'] = 'json';
+            process.env.LOG_FORMAT = 'json';
             const write = mock<FnW>((txt: string) => {
                 expect(txt.indexOf(`,"ctx":"${testName}"`) > 0).toBeTruthy();
                 return true;
@@ -418,7 +418,7 @@ describe('logger tests', () => {
             expect(write.mock.calls.length).toBe(2);
             expect(once.mock.calls.length).toBe(0);
         } finally {
-            process.env['LOG_FORMAT'] = save;
+            process.env.LOG_FORMAT = save;
         }
     });
 

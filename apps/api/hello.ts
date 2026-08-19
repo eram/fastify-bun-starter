@@ -1,5 +1,5 @@
+import { type ZodyCtor, z, zod } from '@libs/zody';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { type ZodyInfer, z, zod } from '@libs/zody';
 import type { RouteSchema, WithBody, WithQuerystring } from './route-types';
 
 /**
@@ -38,11 +38,11 @@ const COMMON_LOCALES = [
  */
 @z.Schema()
 class NumberFormatRequest {
-  @z.number number!: number;
-  @z.string.regex(IETF_BCP47_PATTERN, 'Locale must be in IETF BCP 47 format (e.g., en-US)') locale!: string;
+    @z.number number!: number;
+    @z.string.regex(IETF_BCP47_PATTERN, 'Locale must be in IETF BCP 47 format (e.g., en-US)') locale!: string;
 }
 
-type NumberFormatRequestType = ZodyInfer<typeof NumberFormatRequest>;
+type NumberFormatRequestType = { number: number; locale: string };
 
 /**
  * Custom validator to check if number has max 15 digits
@@ -104,13 +104,13 @@ async function formatNumber(number: number, locale: string, reply: FastifyReply)
 
 @z.Schema()
 class FormattedNumberResponse {
-  @z.string.describe('Formatted number string') formatted!: string;
+    @z.string.describe('Formatted number string') formatted!: string;
 }
 
 // Use functional schema for ErrorResponse due to complex array type
 const errorResponseSchema = zod.object({
-  message: zod.string().describe('Error message'),
-  availableLocales: zod.array(zod.string()).optional().describe('List of commonly available locales'),
+    message: zod.string().describe('Error message'),
+    availableLocales: zod.array(zod.string()).optional().describe('List of commonly available locales'),
 });
 
 /**
@@ -136,7 +136,7 @@ const errorResponseSchema = zod.object({
  */
 export function registerHello(app: FastifyInstance) {
     const responseSchema = {
-        200: FormattedNumberResponse,
+        200: FormattedNumberResponse as unknown as ZodyCtor,
         400: errorResponseSchema,
     };
 
@@ -144,7 +144,7 @@ export function registerHello(app: FastifyInstance) {
         summary: 'Format a number according to locale',
         description: 'Formats a number using Intl.NumberFormat with the specified locale',
         tags: ['API Example'],
-        querystring: NumberFormatRequest,
+        querystring: NumberFormatRequest as unknown as ZodyCtor,
         response: responseSchema,
     };
 
@@ -152,7 +152,7 @@ export function registerHello(app: FastifyInstance) {
         summary: 'Format a number according to locale',
         description: 'Formats a number using Intl.NumberFormat with the specified locale',
         tags: ['API Example'],
-        body: NumberFormatRequest,
+        body: NumberFormatRequest as unknown as ZodyCtor,
         response: responseSchema,
     };
 

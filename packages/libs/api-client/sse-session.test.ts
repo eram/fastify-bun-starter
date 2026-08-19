@@ -1,7 +1,7 @@
 /**
  * Unit tests for SSESession class in sse-session.ts
  */
-import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { sleep } from '@libs/utils/time';
 import { SSESession } from './sse-session';
 
@@ -328,9 +328,7 @@ describe('SSESession', () => {
         session.close();
 
         // sendRequest should throw when session is closed
-        await await expect(async ().rejects.toThrow() => {
-            await session.sendRequest('test.method');
-        }, /Session is closed/);
+        await expect(session.sendRequest('test.method')).rejects.toThrow(/Session is closed/);
     });
 
     test('should test connected and reconnecting properties', async () => {
@@ -479,9 +477,7 @@ describe('SSESession', () => {
         const session = new SSESession('http://localhost', {}, dummyRetry, mockStream);
         await sleep(20);
 
-        await await expect(async ().rejects.toThrow() => {
-            await session.sendRequest('test.method');
-        }, /Not connected - no endpoint URL/);
+        await expect(session.sendRequest('test.method')).rejects.toThrow(/Not connected - no endpoint URL/);
 
         session.close();
     });
@@ -504,7 +500,7 @@ describe('SSESession', () => {
             state: { failures: 0 },
         };
 
-        const mockFetch = spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        const mockFetch = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
             return new Response(JSON.stringify({ success: true }), {
                 status: 200,
             });
@@ -543,16 +539,14 @@ describe('SSESession', () => {
             state: { failures: 0 },
         };
 
-        const mockFetch = spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        const mockFetch = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
             return new Response('Server Error', { status: 500, statusText: 'Internal Server Error' });
         });
         try {
             const session = new SSESession('http://localhost', {}, dummyRetry, mockStream);
             await sleep(20);
 
-            await await expect(async ().rejects.toThrow() => {
-                await session.sendRequest('test.method');
-            }, /HTTP 500/);
+            await expect(session.sendRequest('test.method')).rejects.toThrow(/HTTP 500/);
 
             expect(mockFetch.mock.calls.length > 0).toBeTruthy(); // bun:test mock.calls is compatible
             session.close();

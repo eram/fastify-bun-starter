@@ -8,11 +8,11 @@ describe('HTTP Security Middleware', () => {
 
     beforeEach(async () => {
         // Set test environment variables
-        process.env['CORS_ALLOWED_ORIGINS'] = 'https://example.com';
-        process.env['RATE_LIMIT_WINDOW_MS'] = '60000'; // 1 minute
-        process.env['RATE_LIMIT_MAX_REQUESTS'] = '5';
-        process.env['MAX_BODY_SIZE'] = '1mb';
-        process.env['MAX_URL_LENGTH'] = '2048';
+        process.env.CORS_ALLOWED_ORIGINS = 'https://example.com';
+        process.env.RATE_LIMIT_WINDOW_MS = '60000'; // 1 minute
+        process.env.RATE_LIMIT_MAX_REQUESTS = '5';
+        process.env.MAX_BODY_SIZE = '1mb';
+        process.env.MAX_URL_LENGTH = '2048';
 
         // Create and start server
         app = await createServer();
@@ -174,8 +174,8 @@ describe('HTTP Security Middleware', () => {
 
     test('should block requests with disallowed Host header', async () => {
         // Configure DNS rebinding protection for this test
-        const savedAllowedHosts = process.env['ALLOWED_HOSTS'];
-        process.env['ALLOWED_HOSTS'] = 'localhost,127.0.0.1';
+        const savedAllowedHosts = process.env.ALLOWED_HOSTS;
+        process.env.ALLOWED_HOSTS = 'localhost,127.0.0.1';
 
         // Close and recreate server with new config
         await app.close();
@@ -198,12 +198,12 @@ describe('HTTP Security Middleware', () => {
         expect(body.message).toBe('Host header not allowed');
 
         // Restore env
-        process.env['ALLOWED_HOSTS'] = savedAllowedHosts;
+        process.env.ALLOWED_HOSTS = savedAllowedHosts;
     });
 
     test('should allow requests with allowed Host header', async () => {
-        const savedAllowedHosts = process.env['ALLOWED_HOSTS'];
-        process.env['ALLOWED_HOSTS'] = 'localhost,127.0.0.1';
+        const savedAllowedHosts = process.env.ALLOWED_HOSTS;
+        process.env.ALLOWED_HOSTS = 'localhost,127.0.0.1';
 
         await app.close();
         app = await createServer();
@@ -220,12 +220,12 @@ describe('HTTP Security Middleware', () => {
         });
 
         expect(response.status).toBe(200);
-        process.env['ALLOWED_HOSTS'] = savedAllowedHosts;
+        process.env.ALLOWED_HOSTS = savedAllowedHosts;
     });
 
     test('should skip DNS rebinding protection when not configured', async () => {
-        const savedAllowedHosts = process.env['ALLOWED_HOSTS'];
-        delete process.env['ALLOWED_HOSTS'];
+        const savedAllowedHosts = process.env.ALLOWED_HOSTS;
+        delete process.env.ALLOWED_HOSTS;
 
         await app.close();
         app = await createServer();
@@ -242,12 +242,12 @@ describe('HTTP Security Middleware', () => {
         });
 
         expect(response.status).toBe(200);
-        process.env['ALLOWED_HOSTS'] = savedAllowedHosts;
+        process.env.ALLOWED_HOSTS = savedAllowedHosts;
     });
 
     test('should handle multiple allowed hosts', async () => {
-        const savedAllowedHosts = process.env['ALLOWED_HOSTS'];
-        process.env['ALLOWED_HOSTS'] = 'localhost,127.0.0.1,example.local';
+        const savedAllowedHosts = process.env.ALLOWED_HOSTS;
+        process.env.ALLOWED_HOSTS = 'localhost,127.0.0.1,example.local';
 
         await app.close();
         app = await createServer();
@@ -269,6 +269,6 @@ describe('HTTP Security Middleware', () => {
             headers: { Host: 'evil.com' },
         });
         expect(badResponse.status).toBe(403);
-        process.env['ALLOWED_HOSTS'] = savedAllowedHosts;
+        process.env.ALLOWED_HOSTS = savedAllowedHosts;
     });
 });

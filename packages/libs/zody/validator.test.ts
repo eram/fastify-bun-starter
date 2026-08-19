@@ -28,7 +28,6 @@ import {
     url,
     uuid,
     voidVal,
-    z,
     zod,
 } from './index';
 
@@ -306,7 +305,9 @@ describe('Validator', () => {
                 .parse(
                     'ee26b0dd4af7e749aa1a8ee3c10ae9923f618980772e473f8819a5d4940e0db27ac185f8a0e1d5f84f88bc887fd67b143732c304cc5fa9ad8e6f57f50028a8ff',
                 ),
-        ).toBe('ee26b0dd4af7e749aa1a8ee3c10ae9923f618980772e473f8819a5d4940e0db27ac185f8a0e1d5f84f88bc887fd67b143732c304cc5fa9ad8e6f57f50028a8ff');
+        ).toBe(
+            'ee26b0dd4af7e749aa1a8ee3c10ae9923f618980772e473f8819a5d4940e0db27ac185f8a0e1d5f84f88bc887fd67b143732c304cc5fa9ad8e6f57f50028a8ff',
+        );
     });
 
     // Number validations
@@ -799,7 +800,7 @@ describe('Validator', () => {
         // optional explicitly allows unknown keys (legacy behavior with Schema)
         const opt = optional({ name: string() });
         const optionalResult = opt.parse({ name: 'John', age: 30, anything: 'goes' });
-        expect(optionalResult?.['name']).toBe('John');
+        expect(optionalResult?.name).toBe('John');
     });
 
     test('should support Zod-compatible optional() for any validator', () => {

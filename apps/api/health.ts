@@ -1,6 +1,7 @@
+import type { ZodyCtor } from '@libs/zody';
+import { HealthCheckResponse } from '@shared/health';
 import type { FastifyInstance } from 'fastify';
 import { getCluster } from './cluster';
-import { HealthCheckResponse, type HealthResponse } from '@shared/health';
 import type { RouteSchema } from './route-types';
 
 /**
@@ -13,7 +14,7 @@ export function registerHealth(app: FastifyInstance) {
         description: 'Returns server health status and timestamp',
         tags: ['Monitoring'],
         response: {
-            200: HealthCheckResponse,
+            200: HealthCheckResponse as unknown as ZodyCtor,
         },
     };
 

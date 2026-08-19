@@ -3,10 +3,10 @@
  * Provides type-safe request/response validation using our custom validator
  */
 
-import type { FastifySchemaCompiler, FastifySerializerCompiler, FastifyTypeProvider } from 'fastify';
+import { replacerFn } from '@libs/utils/immutable';
 import type { Validator } from '@libs/zody';
 import { object } from '@libs/zody';
-import { replacerFn } from '@libs/utils/immutable';
+import type { FastifySchemaCompiler, FastifySerializerCompiler, FastifyTypeProvider } from 'fastify';
 
 // Validator-like type (works with both validator instances and zody class statics)
 type ValidatorLike<T = unknown> = {

@@ -6,9 +6,9 @@
  * and allow type-safe route parameter/body definitions without inline type assertions.
  */
 
-import type { FastifySchema, RouteGenericInterface } from 'fastify';
-import type { Validator, ZodyCtor } from '@libs/zody';
 import type { Union } from '@libs/utils/immutable';
+import type { Validator, ZodyCtor } from '@libs/zody';
+import type { FastifySchema, RouteGenericInterface } from 'fastify';
 
 // Union type for validator and zody schemas
 export type ValidatorOrZody = Validator | ZodyCtor | Record<string, Validator>;

@@ -1,11 +1,11 @@
 import { watch as watchFile } from 'node:fs';
 import { access, readFile } from 'node:fs/promises';
 import { join, matchesGlob, normalize, resolve } from 'node:path';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { Env } from '@libs/utils/env';
-import { debounce } from '@libs/utils/time';
 import { atExit } from '@libs/utils/at-exit';
+import { Env } from '@libs/utils/env';
 import { stat } from '@libs/utils/safe';
+import { debounce } from '@libs/utils/time';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { WithParams, WithQuerystring } from './route-types';
 
 type FileType = 'ts' | 'js' | 'cjs' | 'mjs' | 'css' | 'json';
@@ -303,9 +303,9 @@ export async function registerEnvInject(app: FastifyInstance, filesToInject: str
                 } else {
                     // Inject env script - copy only "C_" variables
                     const envVars: NodeJS.ProcessEnv = {};
-                    envVars['APP_NAME'] = Env.vars['APP_NAME'];
-                    envVars['APP_VERSION'] = Env.vars['APP_VERSION'];
-                    envVars['NODE_ENV'] = Env.vars['NODE_ENV'];
+                    envVars.APP_NAME = Env.vars.APP_NAME;
+                    envVars.APP_VERSION = Env.vars.APP_VERSION;
+                    envVars.NODE_ENV = Env.vars.NODE_ENV;
                     for (const key in Env.vars) {
                         if (key.startsWith('C_')) {
                             envVars[key] = Env.vars[key];

@@ -1,8 +1,8 @@
+import { describe, expect, spyOn, test } from 'bun:test';
 import { Buffer } from 'node:buffer';
 import fs from 'node:fs';
 import os from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, spyOn, test } from 'bun:test';
 import * as safe from './safe';
 import { Dirent } from './safe';
 
@@ -45,7 +45,7 @@ describe('safe', () => {
 
         expect(data).toBe(undefined);
         expect(err instanceof Error).toBeTruthy();
-        expect(err.message).toBe(errorMessage);
+        expect(err!.message).toBe(errorMessage);
     });
 
     test('safe() function handles functions returning promises', async () => {
@@ -66,7 +66,7 @@ describe('safe', () => {
 
         expect(data).toBe(undefined);
         expect(err instanceof Error).toBeTruthy();
-        expect(err.message).toBe(errorMessage);
+        expect(err!.message).toBe(errorMessage);
     });
 
     test('dirIterate and rimraf', async () => {
@@ -116,7 +116,7 @@ describe('safe', () => {
             const [files, readdirErr] = await safe.readdir(dir);
             expect(readdirErr).toBe(undefined);
             expect(Array.isArray(files)).toBeTruthy();
-            expect(typeof files[0]).toBe('string');
+            expect(typeof files![0]).toBe('string');
 
             // Test realpath returns string
             const [realPath, realpathErr] = await safe.realpath(filePath);
@@ -146,13 +146,13 @@ describe('safe', () => {
             expect(err).toBe(undefined);
             expect(res instanceof Response).toBeTruthy();
 
-            const data1 = (await res.json()) as { id: number; txt: string };
+            const data1 = (await res!.json()) as { id: number; txt: string };
             expect(data1.txt).toBe('test');
 
             const [data2, err2] = await safe.fetchJson<T>('https://zibzib/1');
             expect(err2).toBe(undefined);
             expect(typeof data2).toBe('object');
-            expect(data2.id).toBe(1);
+            expect(data2!.id).toBe(1);
 
             expect(fn.mock.calls.length).toBe(2);
         } finally {
@@ -187,8 +187,8 @@ describe('safe', () => {
             const [entries, readdirErr] = await safe.readdir(folder, { withFileTypes: true });
             expect(readdirErr).toBe(undefined);
             expect(Array.isArray(entries)).toBeTruthy();
-            expect(entries[0] instanceof Dirent).toBeTruthy();
-            expect(entries[0].isDirectory()).toBeTruthy();
+            expect(entries![0] instanceof Dirent).toBeTruthy();
+            expect(entries![0].isDirectory()).toBeTruthy();
         } finally {
             await safe.rimraf(folder);
         }

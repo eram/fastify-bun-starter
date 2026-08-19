@@ -1,6 +1,6 @@
 import fastifySwagger from '@fastify/swagger';
-import type { FastifyInstance, FastifySchema } from 'fastify';
 import { Env } from '@libs/utils/env';
+import type { FastifyInstance, FastifySchema } from 'fastify';
 
 /**
  * Transform function to convert our Zod-like validator schemas to JSON Schema
@@ -20,7 +20,11 @@ function transformSchema({ schema, url }: { schema: FastifySchema; url: string }
             // Handle response schemas (status code -> schema mapping)
             const responses: Record<string, unknown> = {};
             for (const [statusCode, responseSchema] of Object.entries(value)) {
-                if (responseSchema && (typeof responseSchema === 'object' || typeof responseSchema === 'function') && 'defs' in responseSchema) {
+                if (
+                    responseSchema &&
+                    (typeof responseSchema === 'object' || typeof responseSchema === 'function') &&
+                    'defs' in responseSchema
+                ) {
                     // It's a validator schema with defs() method
                     try {
                         const validator = responseSchema as { defs: (props?: boolean) => unknown };
@@ -63,7 +67,7 @@ function transformSchema({ schema, url }: { schema: FastifySchema; url: string }
  */
 export async function registerSwagger(app: FastifyInstance) {
     // Convert 0.0.0.0 to localhost for browser compatibility
-    const host = process.env['HOST'] === '0.0.0.0' ? 'localhost' : (process.env['HOST'] ?? 'localhost');
+    const host = process.env.HOST === '0.0.0.0' ? 'localhost' : (process.env.HOST ?? 'localhost');
 
     // Register Swagger plugin for auto-generating OpenAPI spec from route schemas
     await app.register(fastifySwagger, {
@@ -76,7 +80,7 @@ export async function registerSwagger(app: FastifyInstance) {
             },
             servers: [
                 {
-                    url: `http://${host}:${process.env['PORT'] ?? 3000}`,
+                    url: `http://${host}:${process.env.PORT ?? 3000}`,
                     description: 'Local development server',
                 },
             ],

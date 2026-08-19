@@ -4,8 +4,8 @@ import cluster from 'node:cluster';
 import path from 'node:path';
 import process from 'node:process';
 import { format, styleText } from 'node:util';
-import pkg from '../../../package.json' with { type: 'json' };
 import { isDebugging } from '@libs/utils/debugger';
+import pkg from '../../../package.json' with { type: 'json' };
 import { replacerFn } from './immutable';
 
 /**
@@ -70,11 +70,11 @@ export class LoggerConf {
 
     constructor({
         scope = this._defName(),
-        level = (process.env['LOG_LEVEL'] ?? LogLevel.INFO) as LogLevel,
-        addTime = (process.env['LOG_ADD_TIME'] ?? 'false').toLowerCase() === 'true',
-        formatter = (process.env['LOG_FORMAT'] ?? (isDebugging() ? 'line' : 'json')).toLowerCase() === 'json' ? jsonFn : lineFn,
+        level = (process.env.LOG_LEVEL ?? LogLevel.INFO) as LogLevel,
+        addTime = (process.env.LOG_ADD_TIME ?? 'false').toLowerCase() === 'true',
+        formatter = (process.env.LOG_FORMAT ?? (isDebugging() ? 'line' : 'json')).toLowerCase() === 'json' ? jsonFn : lineFn,
         chalkFn = styleText,
-        app = process.env['APP_NAME'] ?? pkg.name ?? path.basename(process.execPath),
+        app = process.env.APP_NAME ?? pkg.name ?? path.basename(process.execPath),
     }: LoggerOptions = {}) {
         this.scope = scope;
         this.level = LoggerConf._normalizeLevel(level);
@@ -86,7 +86,7 @@ export class LoggerConf {
     }
 
     private _defName() {
-        const name = process.env['LOG_NAME'] ?? process.env['LOGNAME'];
+        const name = process.env.LOG_NAME ?? process.env.LOGNAME;
         return name || `${process.pid}:${cluster.isWorker ? (cluster.worker?.id ?? 'worker') : 'main'}`;
     }
 

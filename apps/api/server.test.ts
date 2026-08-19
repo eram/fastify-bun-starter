@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { sleep } from '@libs/utils/time';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createServer, registerRoutes, startServer } from './server';
 
 function getPort(app: FastifyInstance): number {
@@ -68,7 +68,7 @@ describe('HTTP Server', () => {
             const body = request.body as Record<string, unknown>;
             // Check if __proto__ was filtered out
             return reply.send({
-                name: body['name'],
+                name: body.name,
                 hasProtoProperty: Object.hasOwn(body, '__proto__'),
                 hasConstructorProperty: Object.hasOwn(body, 'constructor'),
                 constructorValue: body.constructor,
@@ -164,8 +164,8 @@ describe('HTTP Server', () => {
         // Use a unique port for testing
         const testPort = 13600 + Math.floor(Math.random() * 100); // Random port 13600-13699
         const save = { ...process.env };
-        process.env['PORT'] = String(testPort);
-        process.env['HOST'] = '127.0.0.1';
+        process.env.PORT = String(testPort);
+        process.env.HOST = '127.0.0.1';
 
         try {
             // Start server in background (don't await - it runs until closed)
@@ -209,9 +209,9 @@ describe('HTTP Server', () => {
         const testPort = getPort(server1);
 
         // Set port for second server to the same port (to cause conflict)
-        process.env['PORT'] = String(testPort);
-        process.env['HOST'] = '127.0.0.1';
-        process.env['NODE_TEST_CONTEXT'] = '1';
+        process.env.PORT = String(testPort);
+        process.env.HOST = '127.0.0.1';
+        process.env.NODE_TEST_CONTEXT = '1';
 
         try {
             // First server already running (no need for startServer)
@@ -269,9 +269,9 @@ describe('HTTP Server', () => {
             };
 
             // Set environment to use the blocked port
-            process.env['PORT'] = String(blockedPort);
-            process.env['HOST'] = '127.0.0.1';
-            process.env['NODE_TEST_CONTEXT'] = '1'; // Throw error instead of exit
+            process.env.PORT = String(blockedPort);
+            process.env.HOST = '127.0.0.1';
+            process.env.NODE_TEST_CONTEXT = '1'; // Throw error instead of exit
 
             // Verify blocking server is still listening
             expect(blockingServer.listening).toBeTruthy();
@@ -328,9 +328,9 @@ describe('HTTP Server', () => {
         const blockedPort = (address as { port: number }).port;
 
         try {
-            process.env['PORT'] = String(blockedPort);
-            process.env['HOST'] = '127.0.0.1';
-            process.env['NODE_TEST_CONTEXT'] = '1';
+            process.env.PORT = String(blockedPort);
+            process.env.HOST = '127.0.0.1';
+            process.env.NODE_TEST_CONTEXT = '1';
             await sleep(50);
 
             const server = await createServer();
@@ -362,9 +362,9 @@ describe('HTTP Server', () => {
                 errorMessage = args.join(' ');
             };
 
-            process.env['PORT'] = '80'; // Privileged port
-            process.env['HOST'] = '127.0.0.1';
-            process.env['NODE_TEST_CONTEXT'] = '1';
+            process.env.PORT = '80'; // Privileged port
+            process.env.HOST = '127.0.0.1';
+            process.env.NODE_TEST_CONTEXT = '1';
 
             try {
                 await startServer(server);
@@ -440,8 +440,8 @@ describe('HTTP Server', () => {
             // Test that NaN from invalid port doesn't crash
             // (Fastify will use 0 which means random available port)
             const testPort = 13700 + Math.floor(Math.random() * 100);
-            process.env['PORT'] = String(testPort);
-            process.env['HOST'] = '127.0.0.1';
+            process.env.PORT = String(testPort);
+            process.env.HOST = '127.0.0.1';
 
             const startPromise = startServer(server);
             await sleep(100);
@@ -482,9 +482,9 @@ describe('HTTP Server', () => {
         try {
             console.error = () => {}; // Suppress error output
 
-            process.env['PORT'] = String(blockedPort);
-            process.env['HOST'] = '127.0.0.1';
-            process.env['NODE_TEST_CONTEXT'] = '1';
+            process.env.PORT = String(blockedPort);
+            process.env.HOST = '127.0.0.1';
+            process.env.NODE_TEST_CONTEXT = '1';
 
             await sleep(50);
 

@@ -1,8 +1,8 @@
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
-import type { FastifyInstance } from 'fastify';
 import { Env } from '@libs/utils/env';
+import type { FastifyInstance } from 'fastify';
 
 /**
  * Register Helmet security headers plugin
@@ -10,7 +10,7 @@ import { Env } from '@libs/utils/env';
  */
 async function registerHelmet(app: FastifyInstance) {
     const isDev = Env.nodeEnv === 'development';
-    const port = process.env['PORT'] ?? 3000;
+    const port = process.env.PORT ?? 3000;
 
     await app.register(helmet, {
         contentSecurityPolicy: {

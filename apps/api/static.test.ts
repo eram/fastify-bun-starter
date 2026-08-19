@@ -10,8 +10,8 @@ describe('Static file serving', () => {
 
     beforeEach(async () => {
         testPort = 13500 + Math.floor(Math.random() * 100); // Random port 13500-13599
-        process.env['PORT'] = String(testPort);
-        process.env['HOST'] = '127.0.0.1';
+        process.env.PORT = String(testPort);
+        process.env.HOST = '127.0.0.1';
 
         server = await createServer();
         await registerRoutes(server);

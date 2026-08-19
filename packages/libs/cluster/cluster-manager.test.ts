@@ -96,7 +96,7 @@ describe('ClusterManager', () => {
         expect(stats.activeWorkers).toBe(0);
         expect(stats.totalRestarts).toBe(0);
         expect(stats.recentRestarts).toBe(0);
-        expect(Array.isArray(stats.workerPids).toBeTruthy());
+        expect(Array.isArray(stats.workerPids)).toBeTruthy();
         expect(stats.workerPids.length).toBe(0);
         expect(stats.isShuttingDown).toBe(false);
     });
@@ -327,8 +327,8 @@ describe('ClusterManager', () => {
             results.push(manager.getStats());
         }
 
-        expect(results.every((s).toBeTruthy() => s.activeWorkers === 0));
-        expect(results.every((s).toBeTruthy() => s.totalRestarts === 0));
+        expect(results.every((s) => s.activeWorkers === 0)).toBeTruthy();
+        expect(results.every((s) => s.totalRestarts === 0)).toBeTruthy();
     });
 
     test('should handle mixed operations', () => {
@@ -483,8 +483,8 @@ describe('ClusterManager', () => {
         await sleep(5);
 
         const stats = manager.getStats();
-        expect(stats.activeWorkers).toBe(2, 'Should have 2 active workers');
-        expect(forkedWorkers.length).toBe(2, 'Should have forked 2 workers');
+        expect(stats.activeWorkers).toBe(2);
+        expect(forkedWorkers.length).toBe(2);
     });
 
     test('should restart worker when it crashes', async () => {
@@ -532,8 +532,8 @@ describe('ClusterManager', () => {
         await sleep(5);
 
         const statsAfter = manager.getStats();
-        expect(statsAfter.totalRestarts).toBe(1, 'Should track restart');
-        expect(forkedWorkers.length).toBe(2, 'Should have forked replacement worker');
+        expect(statsAfter.totalRestarts).toBe(1);
+        expect(forkedWorkers.length).toBe(2);
     });
 
     test('should not restart worker when maxRestarts reached', async () => {
@@ -643,8 +643,8 @@ describe('ClusterManager', () => {
         await sleep(5);
 
         const stats = manager.getStats();
-        expect(stats.totalRestarts).toBe(0, 'Should not count graceful exit as restart');
-        expect(forkedWorkers.length).toBe(1, 'Should not fork replacement for graceful exit');
+        expect(stats.totalRestarts).toBe(0);
+        expect(forkedWorkers.length).toBe(1);
     });
 
     test('startWorker should import worker file', async () => {
@@ -776,8 +776,9 @@ describe('ClusterManager', () => {
         await manager.startPrimary();
         await sleep(5);
 
-        // Call shutdown and wait for timeout
-        const _shutdownPromise = manager.shutdown();
+        // Call shutdown and wait for timeout (don't await - testing timeout)
+        // biome-ignore lint/complexity/noVoid: intentionally not awaiting to test timeout
+        void manager.shutdown();
 
         // Don't emit exit - let it timeout and force SIGKILL
         await sleep(20);

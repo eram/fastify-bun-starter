@@ -115,8 +115,8 @@ describe('Immutable tests', () => {
         // Basic JSON parsing
         const obj = Immutable.parse('{"x": 10, "y": 20}');
         expect(Object.isFrozen(obj)).toBeTruthy();
-        expect(obj?.['x']).toBe(10);
-        expect(obj?.['y']).toBe(20);
+        expect(obj?.x).toBe(10);
+        expect(obj?.y).toBe(20);
 
         // Invalid JSON throws
         expect(() => Immutable.parse('{not valid json')).toThrow();
@@ -124,27 +124,27 @@ describe('Immutable tests', () => {
         // BigInt roundtrip
         const bigintObj = { a: 1n, b: 2 };
         const parsed = Immutable.parse(JSON.stringify(bigintObj, replacerFn));
-        expect(typeof parsed?.['a']).toBe('bigint');
-        expect(parsed?.['a']).toBe(1n);
-        expect(parsed?.['b']).toBe(2);
+        expect(typeof parsed?.a).toBe('bigint');
+        expect(parsed?.a).toBe(1n);
+        expect(parsed?.b).toBe(2);
 
         // Custom reviver
         const customParsed = Immutable.parse('{"a": 1, "b": 2}', (_k: string, v: unknown) =>
             typeof v === 'number' ? v * 10 : v,
         );
-        expect(customParsed?.['a']).toBe(10);
-        expect(customParsed?.['b']).toBe(20);
+        expect(customParsed?.a).toBe(10);
+        expect(customParsed?.b).toBe(20);
 
         // Prototype pollution protection
         const polluted = Immutable.parse('{"__proto__":{"evil":true}}');
         expect(!Object.hasOwn(polluted, 'evil')).toBeTruthy();
-        expect(!polluted?.['evil']).toBeTruthy();
+        expect(!polluted?.evil).toBeTruthy();
 
         // Mutating methods are undefined
-        expect(obj?.['set']).toBe(undefined);
-        expect(obj?.['deleteProperty']).toBe(undefined);
-        expect(obj?.['push']).toBe(undefined);
-        expect(obj?.['pop']).toBe(undefined);
+        expect(obj?.set).toBe(undefined);
+        expect(obj?.deleteProperty).toBe(undefined);
+        expect(obj?.push).toBe(undefined);
+        expect(obj?.pop).toBe(undefined);
     });
 
     test('parse() - ArrayBuffer and SharedArrayBuffer support', () => {
@@ -189,7 +189,7 @@ describe('Immutable tests', () => {
         // Custom reviver
         const [data4, err4] = Immutable.safeParse('{"a": 1}', (_k: string, v: unknown) => (typeof v === 'number' ? v * 10 : v));
         expect(err4).toBe(undefined);
-        expect(data4?.['a']).toBe(10);
+        expect(data4?.a).toBe(10);
 
         // SharedArrayBuffer
         const encoded = new TextEncoder().encode('{"x": 100}');
@@ -381,7 +381,7 @@ describe('reviverFn and replacerFn', () => {
         const obj: Dict = {};
         const malicious = JSON.parse('{"__proto__": {"isAdmin": true}}', reviverFn);
         Object.assign(obj, malicious);
-        expect(!obj['isAdmin']).toBeTruthy();
+        expect(!obj.isAdmin).toBeTruthy();
     });
 
     test('reviverFn filters __ properties', () => {

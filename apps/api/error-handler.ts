@@ -3,8 +3,8 @@
  * Provides user-friendly error pages for 4xx and 5xx errors
  */
 
-import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ErrorEx } from '@libs/utils/error';
+import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 /**
  * Get HTTP status text for error responses
@@ -35,7 +35,7 @@ function getStatusText(code: number): string {
  * Generate HTML error page using classless CSS
  */
 function generateErrorPage(statusCode: number, error?: Error): string {
-    const isDev = process.env['NODE_ENV'] === 'development';
+    const isDev = process.env.NODE_ENV === 'development';
     const message = error?.message ?? getStatusText(statusCode);
     const title = getStatusText(statusCode);
     return `<!DOCTYPE html>

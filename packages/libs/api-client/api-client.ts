@@ -55,27 +55,27 @@ export class ClientOptions {
         switch (this.afterFn) {
             case 'arrayBuffer':
             case 'bytes':
-                this.defaultHeaders['Accept'] = 'application/octet-stream';
+                this.defaultHeaders.Accept = 'application/octet-stream';
                 break;
 
             case 'blob':
-                this.defaultHeaders['Accept'] = 'image/*, application/octet-stream';
+                this.defaultHeaders.Accept = 'image/*, application/octet-stream';
                 break;
 
             case 'formData':
-                this.defaultHeaders['Accept'] = '*/*';
+                this.defaultHeaders.Accept = '*/*';
                 break;
 
             case 'text':
-                this.defaultHeaders['Accept'] = 'text/plain, text/html';
+                this.defaultHeaders.Accept = 'text/plain, text/html';
                 break;
 
             case 'sse':
-                this.defaultHeaders['Accept'] = 'application/json, text/event-stream';
+                this.defaultHeaders.Accept = 'application/json, text/event-stream';
                 break;
 
             default: // 'json':
-                this.defaultHeaders['Accept'] = 'application/json';
+                this.defaultHeaders.Accept = 'application/json';
                 break;
         }
     }
@@ -271,7 +271,7 @@ export class ApiClient {
             if (Array.isArray(init.headers) && !init.headers.find((h) => h[0].toLowerCase() === 'authorization')) {
                 init.headers.push(['Authorization', `Bearer ${this._opt.bearerToken}`]);
             } else if (!Array.isArray(init.headers)) {
-                (init.headers as Record<string, string>)['Authorization'] ??= `Bearer ${this._opt.bearerToken}`;
+                (init.headers as Record<string, string>).Authorization ??= `Bearer ${this._opt.bearerToken}`;
             }
         }
 

@@ -1,5 +1,5 @@
-import readline from 'node:readline';
 import { describe, expect, test } from 'bun:test';
+import readline from 'node:readline';
 import { blue, bold, color, errno, getErrorName, green, grey, prompt, red, system, yellow } from './shell';
 
 describe('shell testing', () => {
@@ -78,9 +78,9 @@ describe('shell testing', () => {
     test('system handles child process error event', async () => {
         // This test covers the error handler (lines 112-113 in shell.ts)
         // Use timeout to prevent hanging on Windows when command doesn't exist
-        await expect(
-            system('this-command-does-not-exist-anywhere-12345', { throwOnError: true, timeout: 300 }),
-        ).rejects.toThrow(/Failed with exit code/);
+        await expect(system('this-command-does-not-exist-anywhere-12345', { throwOnError: true, timeout: 300 })).rejects.toThrow(
+            /Failed with exit code/,
+        );
     });
 
     test('prompt handles SIGINT rejection', async () => {

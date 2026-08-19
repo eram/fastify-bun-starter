@@ -52,7 +52,7 @@ export class Env {
         typeof Object(globalThis).window !== 'undefined' &&
         typeof Object(globalThis).document !== 'undefined' &&
         typeof Object(globalThis).document.querySelector === 'function';
-    static isDevelopment = process.env['NODE_ENV'] === 'development';
+    static isDevelopment = process.env.NODE_ENV === 'development';
 
     /**
      * Server-side initialization helper method.
@@ -76,8 +76,8 @@ export class Env {
             isDebugging = debuggerMod.isDebugging;
 
             // Load .env.{NODE_ENV} file if it exists, otherwise use defaults
-            const dotenv = env['DOT_ENV_FILE'] ? path.resolve(env['DOT_ENV_FILE']) : path.resolve(`.env.${env['NODE_ENV']}`);
-            env['DOT_ENV_FILE'] ??= dotenv;
+            const dotenv = env.DOT_ENV_FILE ? path.resolve(env.DOT_ENV_FILE) : path.resolve(`.env.${env.NODE_ENV}`);
+            env.DOT_ENV_FILE ??= dotenv;
 
             try {
                 const buff = fs.readFileSync(dotenv);
@@ -104,36 +104,34 @@ export class Env {
             pkg = JSON.parse(fs.readFileSync(path.resolve(Env.__dirname, 'package.json'), 'utf8'));
 
             // must have env vars
-            env['APP_NAME'] ??= pkg['name'] ?? path.basename(process.execPath);
-            Env.appName = env['APP_NAME'];
+            env.APP_NAME ??= pkg.name ?? path.basename(process.execPath);
+            Env.appName = env.APP_NAME;
 
-            env['APP_VERSION'] ??= pkg['version'] ?? '0.0.0';
-            Env.appVersion = env['APP_VERSION'];
+            env.APP_VERSION ??= pkg.version ?? '0.0.0';
+            Env.appVersion = env.APP_VERSION;
 
-            env['HOSTNAME'] ??= os.hostname();
-            Env.hostname = env['HOSTNAME'];
+            env.HOSTNAME ??= os.hostname();
+            Env.hostname = env.HOSTNAME;
 
-            env['LOG_ADD_TIME'] ??= 'false';
-            env['LOG_LEVEL'] ??= 'INFO';
-            env['LOG_FORMAT'] ??= ['-json', '--json', '-raw', '--raw'].some((arg) => process.argv.includes(arg))
-                ? 'json'
-                : 'line';
+            env.LOG_ADD_TIME ??= 'false';
+            env.LOG_LEVEL ??= 'INFO';
+            env.LOG_FORMAT ??= ['-json', '--json', '-raw', '--raw'].some((arg) => process.argv.includes(arg)) ? 'json' : 'line';
 
-            env['POD_NAME'] ??= '';
-            Env.podName = env['POD_NAME'];
+            env.POD_NAME ??= '';
+            Env.podName = env.POD_NAME;
 
-            env['POD_NAMESPACE'] ??= '';
-            Env.podNamespace = env['POD_NAMESPACE'];
+            env.POD_NAMESPACE ??= '';
+            Env.podNamespace = env.POD_NAMESPACE;
 
             // Initialize static members
-            Env.runtime = process.versions['bun'] ? 'bun' : 'node';
-            Env.runtimeVer = String(process.versions['bun']?.substring(0) ?? process.versions.node?.substring(0) ?? '0');
+            Env.runtime = process.versions.bun ? 'bun' : 'node';
+            Env.runtimeVer = String(process.versions.bun?.substring(0) ?? process.versions.node?.substring(0) ?? '0');
             Env.isPrimary = cluster.default.isPrimary;
             Env.isMainThread = worker.isMainThread;
-            Env.isTestMode = process.env['NODE_ENV'] === 'test' || process.env['NODE_TEST_CONTEXT'] === 'true';
+            Env.isTestMode = process.env.NODE_ENV === 'test' || process.env.NODE_TEST_CONTEXT === 'true';
             Env.threadId = worker.threadId;
             Env.workerId = cluster.default.isWorker ? cluster.default.worker!.id.toString() : '';
-            Env.uvThreadpool = Number(process.env['UV_THREADPOOL_SIZE']) || 4;
+            Env.uvThreadpool = Number(process.env.UV_THREADPOOL_SIZE) || 4;
 
             process.title = Env.appName;
         } catch (_err) {
@@ -164,14 +162,14 @@ export class Env {
             isServer && (process.argv.includes('--json') || process.argv.includes('--help') || process.argv.includes('-h'));
         let isDebugging = () => false;
 
-        env['NODE_ENV'] ??= 'development';
-        Env.nodeEnv = env['NODE_ENV'];
+        env.NODE_ENV ??= 'development';
+        Env.nodeEnv = env.NODE_ENV;
 
         // Client-side initialization (browser)
         if (!isServer) {
             Env.hostname = window.location?.hostname ?? '';
-            Env.appName = (env['APP_NAME'] ?? Env.hostname) || 'app';
-            Env.appVersion = env['APP_VERSION'] ?? '0.0.0';
+            Env.appName = (env.APP_NAME ?? Env.hostname) || 'app';
+            Env.appVersion = env.APP_VERSION ?? '0.0.0';
             const info = getBrowserVersion();
             Env.runtime = info.browserName;
             Env.runtimeVer = String(info.fullVersion);
@@ -192,7 +190,7 @@ namespace: ${Env.podNamespace || '-'}, pod: ${Env.podName || '-'},
 pid: ${process.pid}, workerId: ${Env.workerId || '-'}, threadId: ${Env.threadId || '-'},
 euid: ${process.geteuid?.() ?? '-'} egid: ${process.getegid?.() ?? '-'},
 args: "${process.execArgv.join(' ')}",
-logLevel: ${env['LOG_LEVEL']}, isDebugging: ${isDebugging()}, test: ${process.env['NODE_TEST_CONTEXT']}`
+logLevel: ${env.LOG_LEVEL}, isDebugging: ${isDebugging()}, test: ${process.env.NODE_TEST_CONTEXT}`
             : '';
 
         Env._out = `

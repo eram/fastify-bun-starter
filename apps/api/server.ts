@@ -1,11 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getSystemErrorName } from 'node:util';
-import Fastify, { type FastifyInstance } from 'fastify';
 import { Env } from '@libs/utils/env';
 import { ErrorEx } from '@libs/utils/error';
-import { fromHumanBytes } from '@libs/utils/text';
 import { replacerFn, reviverFn } from '@libs/utils/immutable';
+import { fromHumanBytes } from '@libs/utils/text';
+import Fastify, { type FastifyInstance } from 'fastify';
 import { registerErrorHandler } from './error-handler';
 import { registerHealth } from './health';
 import { registerHello } from './hello';
@@ -227,8 +227,8 @@ export async function registerRoutes(app: AppInstance) {
  * Start HTTP server
  */
 export async function startServer(app: AppInstance) {
-    const port = Number.parseInt(process.env['PORT'] ?? '3000', 10);
-    const host = process.env['HOST'] ?? '0.0.0.0';
+    const port = Number.parseInt(process.env.PORT ?? '3000', 10);
+    const host = process.env.HOST ?? '0.0.0.0';
 
     try {
         await app.listen({ port, host });
@@ -241,7 +241,7 @@ export async function startServer(app: AppInstance) {
         console.error(`Error starting server: ${errorMessage}`);
 
         // In test mode (NODE_TEST_CONTEXT set), throw error instead of exiting
-        if (process.env['NODE_TEST_CONTEXT']) {
+        if (process.env.NODE_TEST_CONTEXT) {
             throw err;
         }
         process.exit(1);

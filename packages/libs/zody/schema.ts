@@ -208,18 +208,18 @@ function parseSchema<T extends Record<string, Validator>>(schema: Schema<T> | Re
 
     // Start with properties from the validator defs if available
     const result = (schemaDef ? { ...schemaDef } : { type: 'object' }) as Record<string, unknown>;
-    result['properties'] = {};
-    result['required'] = [];
+    result.properties = {};
+    result.required = [];
 
     for (const [key, propValidator] of Object.entries(schemaProps)) {
         const savedPath = refs.currentPath;
         refs.currentPath = [...savedPath, 'properties', key];
 
-        (result['properties'] as Record<string, JsonSchema>)[key] = parseValidator(propValidator, refs);
+        (result.properties as Record<string, JsonSchema>)[key] = parseValidator(propValidator, refs);
 
         // Check if optional
         if (!propValidator.isOptional) {
-            (result['required'] as string[]).push(key);
+            (result.required as string[]).push(key);
         }
 
         refs.currentPath = savedPath;
@@ -228,7 +228,7 @@ function parseSchema<T extends Record<string, Validator>>(schema: Schema<T> | Re
     // Keep required array even if empty (JSON Schema spec allows it)
 
     // Set additionalProperties based on context
-    result['additionalProperties'] = refs.options.additionalProperties;
+    result.additionalProperties = refs.options.additionalProperties;
 
     return result as JsonSchema;
 }
@@ -380,8 +380,8 @@ export function fromJsonSchema(jsonSchema: Readonly<JsonSchema> | boolean, optio
  */
 function parseJsonSchema(schema: JsonSchema, opts: Required<FromJsonSchemaOptions>): Validator {
     // Handle schema combinators first
-    if (schema['anyOf']) {
-        return parseAnyOf(schema['anyOf'], opts);
+    if (schema.anyOf) {
+        return parseAnyOf(schema.anyOf, opts);
     }
 
     if (schema.oneOf) {
@@ -393,18 +393,18 @@ function parseJsonSchema(schema: JsonSchema, opts: Required<FromJsonSchemaOption
     }
 
     // Handle not (negation)
-    if (schema['not']) {
+    if (schema.not) {
         throw new Error('JSON Schema "not" combinator not supported in validator conversion');
     }
 
     // Handle enum
-    if (schema['enum']) {
-        return parseEnum(schema['enum']);
+    if (schema.enum) {
+        return parseEnum(schema.enum);
     }
 
     // Handle const
-    if (schema['const'] !== undefined) {
-        const constValue = schema['const'];
+    if (schema.const !== undefined) {
+        const constValue = schema.const;
         // Ensure const value is a valid literal type
         if (
             typeof constValue === 'string' ||
@@ -423,7 +423,7 @@ function parseJsonSchema(schema: JsonSchema, opts: Required<FromJsonSchemaOption
 
     // Handle nullable (OpenAPI / older JSON Schema)
     if ((schema as { nullable?: boolean }).nullable === true) {
-        const baseType = schema['type'];
+        const baseType = schema.type;
         if (!baseType) {
             throw new Error('nullable requires a type property');
         }
@@ -435,7 +435,7 @@ function parseJsonSchema(schema: JsonSchema, opts: Required<FromJsonSchemaOption
     }
 
     // Handle type-based dispatch
-    const type = schema['type'];
+    const type = schema.type;
 
     if (!type) {
         // No type specified - return empty object schema
@@ -476,8 +476,8 @@ function parseJsonSchema(schema: JsonSchema, opts: Required<FromJsonSchemaOption
 function parseObjectSchema(schema: JsonSchema, opts: Required<FromJsonSchemaOptions>): Record<string, Validator> {
     const result: Record<string, Validator> = {};
 
-    const properties = schema['properties'] as Record<string, JsonSchema> | undefined;
-    const required = schema['required'] as string[] | undefined;
+    const properties = schema.properties as Record<string, JsonSchema> | undefined;
+    const required = schema.required as string[] | undefined;
 
     if (properties) {
         for (const [key, propSchema] of Object.entries(properties)) {
@@ -502,8 +502,8 @@ function parseArraySchema(schema: JsonSchema, opts: Required<FromJsonSchemaOptio
     let validator: Validator = v.array();
 
     // Handle items schema
-    if (schema['items']) {
-        const itemsSchema = parseJsonSchema(schema['items'] as JsonSchema, opts);
+    if (schema.items) {
+        const itemsSchema = parseJsonSchema(schema.items as JsonSchema, opts);
         if (isValidator(itemsSchema)) {
             validator = v.array(itemsSchema);
         } else {
@@ -512,11 +512,11 @@ function parseArraySchema(schema: JsonSchema, opts: Required<FromJsonSchemaOptio
     }
 
     // Add constraints (arrays use minLength/maxLength, not min/max)
-    if (schema['minItems'] !== undefined) {
-        validator = (validator as ArrV).minLength(schema['minItems']);
+    if (schema.minItems !== undefined) {
+        validator = (validator as ArrV).minLength(schema.minItems);
     }
-    if (schema['maxItems'] !== undefined) {
-        validator = (validator as ArrV).maxLength(schema['maxItems']);
+    if (schema.maxItems !== undefined) {
+        validator = (validator as ArrV).maxLength(schema.maxItems);
     }
 
     return validator;
@@ -541,35 +541,35 @@ function parseStringSchema(schema: JsonSchema): Validator {
     });
 
     // String constraints
-    if (schema['minLength'] !== undefined) {
+    if (schema.minLength !== undefined) {
         validator.push((val: string) => {
-            if (val.length < schema['minLength']!) {
-                throw new Error(`String length ${val.length} is less than minimum ${schema['minLength']}`);
+            if (val.length < schema.minLength!) {
+                throw new Error(`String length ${val.length} is less than minimum ${schema.minLength}`);
             }
             return val;
         });
     }
-    if (schema['maxLength'] !== undefined) {
+    if (schema.maxLength !== undefined) {
         validator.push((val: string) => {
-            if (val.length > schema['maxLength']!) {
-                throw new Error(`String length ${val.length} exceeds maximum ${schema['maxLength']}`);
+            if (val.length > schema.maxLength!) {
+                throw new Error(`String length ${val.length} exceeds maximum ${schema.maxLength}`);
             }
             return val;
         });
     }
-    if (schema['pattern']) {
-        const pattern = new RegExp(schema['pattern']);
+    if (schema.pattern) {
+        const pattern = new RegExp(schema.pattern);
         validator.push((val: string) => {
             if (!pattern.test(val)) {
-                throw new Error(`String does not match pattern ${schema['pattern']}`);
+                throw new Error(`String does not match pattern ${schema.pattern}`);
             }
             return val;
         });
     }
 
     // String formats (basic support)
-    if (schema['format']) {
-        switch (schema['format']) {
+    if (schema.format) {
+        switch (schema.format) {
             case 'email':
                 validator.email();
                 break;
@@ -613,7 +613,7 @@ function parseNumberSchema(schema: JsonSchema): Validator {
     });
 
     // Integer constraint
-    if (schema['type'] === 'integer') {
+    if (schema.type === 'integer') {
         validator.push((val: number) => {
             if (!Number.isInteger(val)) {
                 throw new Error(`Expected integer, got ${val}`);
@@ -626,38 +626,38 @@ function parseNumberSchema(schema: JsonSchema): Validator {
     // Draft 4 style: exclusiveMinimum/Maximum are boolean companions to minimum/maximum
     // Draft 2019-09/2020-12 style: exclusiveMinimum/Maximum are numbers themselves
 
-    if (schema['minimum'] !== undefined) {
+    if (schema.minimum !== undefined) {
         // Check if we have Draft 4 style exclusiveMinimum as boolean
-        const hasExclusiveBooleanMin = (schema as unknown as Record<string, unknown>)['exclusiveMinimum'] === true;
+        const hasExclusiveBooleanMin = (schema as unknown as Record<string, unknown>).exclusiveMinimum === true;
         if (hasExclusiveBooleanMin) {
             // Draft 4 style: minimum with exclusiveMinimum: true
-            validator = validator.gt(schema['minimum']);
+            validator = validator.gt(schema.minimum);
         } else {
-            validator = validator.gte(schema['minimum']);
+            validator = validator.gte(schema.minimum);
         }
     }
 
-    if (schema['maximum'] !== undefined) {
+    if (schema.maximum !== undefined) {
         // Check if we have Draft 4 style exclusiveMaximum as boolean
-        const hasExclusiveBooleanMax = (schema as unknown as Record<string, unknown>)['exclusiveMaximum'] === true;
+        const hasExclusiveBooleanMax = (schema as unknown as Record<string, unknown>).exclusiveMaximum === true;
         if (hasExclusiveBooleanMax) {
             // Draft 4 style: maximum with exclusiveMaximum: true
-            validator = validator.lt(schema['maximum']);
+            validator = validator.lt(schema.maximum);
         } else {
-            validator = validator.lte(schema['maximum']);
+            validator = validator.lte(schema.maximum);
         }
     }
 
     // Draft 2019-09 / 2020-12 style: exclusiveMinimum/Maximum are numbers
-    if (typeof schema['exclusiveMinimum'] === 'number') {
-        validator = validator.gt(schema['exclusiveMinimum']);
+    if (typeof schema.exclusiveMinimum === 'number') {
+        validator = validator.gt(schema.exclusiveMinimum);
     }
-    if (typeof schema['exclusiveMaximum'] === 'number') {
-        validator = validator.lt(schema['exclusiveMaximum']);
+    if (typeof schema.exclusiveMaximum === 'number') {
+        validator = validator.lt(schema.exclusiveMaximum);
     }
 
-    if (schema['multipleOf'] !== undefined) {
-        validator = validator.multipleOf(schema['multipleOf']);
+    if (schema.multipleOf !== undefined) {
+        validator = validator.multipleOf(schema.multipleOf);
     }
 
     return validator;
