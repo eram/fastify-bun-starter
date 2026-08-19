@@ -7,8 +7,7 @@
  */
 
 import type { FastifySchema, RouteGenericInterface } from 'fastify';
-import type { Validator } from '@libs/validator';
-import type { ZodyCtor } from '@libs/zody';
+import type { Validator, ZodyCtor } from '@libs/zody';
 import type { Union } from '@libs/utils/immutable';
 
 // Union type for validator and zody schemas

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { number, object, string } from '@libs/validator';
+import { number, object, string } from '@libs/zody';
 import { createServer } from './server';
 
 /**

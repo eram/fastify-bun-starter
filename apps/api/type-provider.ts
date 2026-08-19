@@ -4,8 +4,8 @@
  */
 
 import type { FastifySchemaCompiler, FastifySerializerCompiler, FastifyTypeProvider } from 'fastify';
-import type { Validator } from '@libs/validator';
-import { object } from '@libs/validator';
+import type { Validator } from '@libs/zody';
+import { object } from '@libs/zody';
 import { replacerFn } from '@libs/utils/immutable';
 
 // Validator-like type (works with both validator instances and zody class statics)

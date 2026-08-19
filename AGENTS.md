@@ -63,7 +63,6 @@ This file provides guidance to AI coding agents when working with code in this r
 - **Test Framework**: Use Bun's native test framework (`bun:test`) — `describe`, `test`, `expect`, `mock`, `spyOn`, `beforeEach`/`afterEach`.
   - No Vitest/Jest needed; this is Bun's own runner, not the `node:test` compatibility shim (that shim has known gaps — see `oven-sh/bun#5090` — which is why we moved off it).
   - Use `mock(...)`/`spyOn(...)` from `bun:test` for mocks, and always validate the mock was actually called (check `.mock.calls`).
-  - `script/version-guard.ts` (Bun preload) only enforces the minimum Bun version from `package.json`'s `engines` field — no mocking polyfill needed anymore since `bun:test`'s mock API is native.
 - **Unit Test Files**: `*.test.ts` file next to its code-related source code file.
 - **API testing**: For HTTP API testing use Fastify's `inject()` method.
 - **Integration Tests** (ci/): CLI tests using child_process to run the server process.

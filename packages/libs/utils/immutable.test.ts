@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { number, object, string } from '@libs/validator/validator';
+import { number, object, string } from '@libs/zody';
 import { type Dict, Immutable, is, isEmpty, replacerFn, reviverFn, type Union } from './immutable';
 
 // ============================================================================

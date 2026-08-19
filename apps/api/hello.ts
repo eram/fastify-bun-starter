@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { type Infer, z } from '@libs/validator';
+import { type ZodyInfer, z, zod } from '@libs/zody';
 import type { RouteSchema, WithBody, WithQuerystring } from './route-types';
 
 /**
@@ -36,15 +36,13 @@ const COMMON_LOCALES = [
  * - number: 1-15 digits, positive or negative
  * - locale: IETF BCP 47 format (e.g., en-US)
  */
-const numberFormatSchema = z.object({
-    number: z.number().describe('Number to format (1-15 digits, can be positive or negative)'),
-    locale: z
-        .string()
-        .regex(IETF_BCP47_PATTERN, 'Locale must be in IETF BCP 47 format (e.g., en-US)')
-        .describe('Locale in IETF BCP 47 format (e.g., en-US, de-DE)'),
-});
+@z.Schema()
+class NumberFormatRequest {
+  @z.number number!: number;
+  @z.string.regex(IETF_BCP47_PATTERN, 'Locale must be in IETF BCP 47 format (e.g., en-US)') locale!: string;
+}
 
-type NumberFormatRequest = Infer<typeof numberFormatSchema>;
+type NumberFormatRequestType = ZodyInfer<typeof NumberFormatRequest>;
 
 /**
  * Custom validator to check if number has max 15 digits
@@ -104,6 +102,17 @@ async function formatNumber(number: number, locale: string, reply: FastifyReply)
     }
 }
 
+@z.Schema()
+class FormattedNumberResponse {
+  @z.string.describe('Formatted number string') formatted!: string;
+}
+
+// Use functional schema for ErrorResponse due to complex array type
+const errorResponseSchema = zod.object({
+  message: zod.string().describe('Error message'),
+  availableLocales: zod.array(zod.string()).optional().describe('List of commonly available locales'),
+});
+
 /**
  * Register number formatting endpoints
  *
@@ -127,20 +136,15 @@ async function formatNumber(number: number, locale: string, reply: FastifyReply)
  */
 export function registerHello(app: FastifyInstance) {
     const responseSchema = {
-        200: z.object({
-            formatted: z.string().describe('Formatted number string'),
-        }),
-        400: z.object({
-            message: z.string().describe('Error message'),
-            availableLocales: z.array(z.string()).optional().describe('List of commonly available locales'),
-        }),
+        200: FormattedNumberResponse,
+        400: errorResponseSchema,
     };
 
     const getSchema: RouteSchema = {
         summary: 'Format a number according to locale',
         description: 'Formats a number using Intl.NumberFormat with the specified locale',
         tags: ['API Example'],
-        querystring: numberFormatSchema,
+        querystring: NumberFormatRequest,
         response: responseSchema,
     };
 
@@ -148,29 +152,29 @@ export function registerHello(app: FastifyInstance) {
         summary: 'Format a number according to locale',
         description: 'Formats a number using Intl.NumberFormat with the specified locale',
         tags: ['API Example'],
-        body: numberFormatSchema,
+        body: NumberFormatRequest,
         response: responseSchema,
     };
 
     // GET endpoint with query parameters
-    app.get<WithQuerystring<NumberFormatRequest>>(
+    app.get<WithQuerystring<NumberFormatRequestType>>(
         '/api/v1/hello',
         {
             schema: getSchema,
         },
-        async (request: FastifyRequest<WithQuerystring<NumberFormatRequest>>, reply: FastifyReply) => {
+        async (request: FastifyRequest<WithQuerystring<NumberFormatRequestType>>, reply: FastifyReply) => {
             const { number, locale } = request.query;
             return formatNumber(number, locale, reply);
         },
     );
 
     // POST endpoint with JSON body
-    app.post<WithBody<NumberFormatRequest>>(
+    app.post<WithBody<NumberFormatRequestType>>(
         '/api/v1/hello',
         {
             schema: postSchema,
         },
-        async (request: FastifyRequest<WithBody<NumberFormatRequest>>, reply: FastifyReply) => {
+        async (request: FastifyRequest<WithBody<NumberFormatRequestType>>, reply: FastifyReply) => {
             const { number, locale } = request.body;
             return formatNumber(number, locale, reply);
         },

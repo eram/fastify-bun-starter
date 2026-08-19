@@ -31,7 +31,7 @@
         "@fastify/swagger": "^9.8.1",
         "@libs/api-client": "workspace:*",
         "@libs/utils": "workspace:*",
-        "@libs/validator": "workspace:*",
+        "@libs/zody": "workspace:*",
         "@shared": "workspace:*",
         "fastify": "^5.11.0",
       },
@@ -63,8 +63,11 @@
       "name": "@libs/utils",
       "version": "0.1.0",
     },
-    "packages/libs/validator": {
-      "name": "@libs/validator",
+    "packages/libs/zody": {
+      "name": "@libs/zody",
+      "dependencies": {
+        "@libs/utils": "workspace:*",
+      },
     },
     "packages/shared": {
       "name": "@shared",
@@ -136,7 +139,7 @@
 
     "@libs/utils": ["@libs/utils@workspace:packages/libs/utils"],
 
-    "@libs/validator": ["@libs/validator@workspace:packages/libs/validator"],
+    "@libs/zody": ["@libs/zody@workspace:packages/libs/zody"],
 
     "@lukeed/ms": ["@lukeed/ms@2.0.2", "", {}, "sha512-9I2Zn6+NJLfaGoz9jN3lpwDgAYvfGeNYdbAIjJOqzs4Tpc+VU3Jqq4IofSUBKajiDS8k9fZIg18/z13mpk1bsA=="],
 

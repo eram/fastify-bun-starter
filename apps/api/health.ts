@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { getCluster } from './cluster';
-import { healthResponseSchema } from '@shared/health';
+import { HealthCheckResponse, type HealthResponse } from '@shared/health';
 import type { RouteSchema } from './route-types';
 
 /**
@@ -13,7 +13,7 @@ export function registerHealth(app: FastifyInstance) {
         description: 'Returns server health status and timestamp',
         tags: ['Monitoring'],
         response: {
-            200: healthResponseSchema,
+            200: HealthCheckResponse,
         },
     };
 

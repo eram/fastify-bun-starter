@@ -5,6 +5,7 @@ import {
     bigint,
     boolean,
     date,
+    email,
     isoDate,
     isoDatetime,
     isoDuration,
@@ -24,8 +25,11 @@ import {
     string,
     undefinedVal,
     union,
+    url,
+    uuid,
     voidVal,
     z,
+    zod,
 } from './index';
 
 describe('Validator', () => {
@@ -960,8 +964,8 @@ describe('Validator', () => {
         expect(keySchema.parse('email')).toBe('email');
         expect(() => keySchema.parse('unknown')).toThrow(/Value does not match any union member/);
 
-        // Works with z.object()
-        const zSchema = z.object({ id: z.number(), title: z.string() });
+        // Works with object()
+        const zSchema = object({ id: number(), title: string() });
         const zKeySchema = zSchema.keyof();
         expect(zKeySchema.parse('id')).toBe('id');
         expect(() => zKeySchema.parse('invalid')).toThrow(/Value does not match any union member/);
@@ -973,34 +977,34 @@ describe('Validator', () => {
     // Zod-like API (z export)
     test('should provide all primitive validators and complex types', () => {
         // Primitives
-        expect(z.string().parse('hello')).toBe('hello');
-        expect(z.number().parse(42)).toBe(42);
+        expect(string().parse('hello')).toBe('hello');
+        expect(number().parse(42)).toBe(42);
 
         // Array
-        expect(z.array(z.number()).parse([1, 2, 3])).toEqual([1, 2, 3]);
+        expect(array(number()).parse([1, 2, 3])).toEqual([1, 2, 3]);
 
         // Format validators
-        expect(z.email().parse('test@example.com')).toBe('test@example.com');
-        expect(z.url().parse('https://example.com')).toBe('https://example.com');
-        expect(z.uuid().parse('550e8400-e29b-41d4-a716-446655440000')).toBe('550e8400-e29b-41d4-a716-446655440000');
+        expect(email().parse('test@example.com')).toBe('test@example.com');
+        expect(url().parse('https://example.com')).toBe('https://example.com');
+        expect(uuid().parse('550e8400-e29b-41d4-a716-446655440000')).toBe('550e8400-e29b-41d4-a716-446655440000');
 
         // Nullable and nullish
-        expect(z.nullable(z.string()).parse(null)).toBe(null);
-        expect(z.nullish(z.number()).parse(undefined)).toBe(undefined);
+        expect(nullable(string()).parse(null)).toBe(null);
+        expect(nullish(number()).parse(undefined)).toBe(undefined);
 
         // Describe
-        expect(z.object({ name: z.string() }).describe('User schema').defs().description).toBe('User schema');
+        expect(object({ name: string() }).describe('User schema').defs().description).toBe('User schema');
 
         // strictObject and optional
-        expect(typeof z.strictObject).toBe('function');
-        expect(typeof z.optional).toBe('function');
+        expect(typeof strictObject).toBe('function');
+        expect(typeof optional).toBe('function');
     });
 
-    test('should work with z.object() and z.union()', () => {
-        const schema = z.object({
-            id: z.number(),
-            name: z.string().min(3),
-            status: z.union([z.literal('active'), z.literal('inactive')]),
+    test('should work with object() and union()', () => {
+        const schema = object({
+            id: number(),
+            name: string().min(3),
+            status: union([literal('active'), literal('inactive')]),
         });
 
         const result = schema.parse({ id: 1, name: 'John', status: 'active' });
@@ -1028,8 +1032,8 @@ describe('Validator', () => {
         expect(rangeSchema.parse({ a: 1, b: 2, c: 3 })).toEqual({ a: 1, b: 2, c: 3 });
         expect(() => rangeSchema.parse({ a: 1, b: 2, c: 3, d: 4 })).toThrow(/Object must have at most 3/);
 
-        // Works with z.object()
-        const zSchema = z.object({}).minProperties(1).maxProperties(2);
+        // Works with object()
+        const zSchema = object({}).minProperties(1).maxProperties(2);
         expect(() => zSchema.parse({})).toThrow(/Object must have at least 1/);
         expect(zSchema.parse({ x: 'test' })).toEqual({ x: 'test' });
         expect(() => zSchema.parse({ x: 'test', y: 'data', z: 'extra' })).toThrow(/Object must have at most 2/);
@@ -1138,27 +1142,27 @@ describe('Validator', () => {
         }
     });
 
-    test('z.safeParse should return Zod-compatible result format', () => {
-        const schema = z.string().min(3);
+    test('safeParse should return Zod-compatible result format', () => {
+        const schema = string().min(3);
 
         // Success case
-        const result1 = z.safeParse(schema, 'hello');
+        const result1 = zod.safeParse(schema, 'hello');
         expect(result1.success).toBe(true);
         if (result1.success) {
             expect(result1.data).toBe('hello');
         }
 
         // Error case
-        const result2 = z.safeParse(schema, 'ab');
+        const result2 = zod.safeParse(schema, 'ab');
         expect(result2.success).toBe(false);
         if (!result2.success) {
             expect(result2.error instanceof Error).toBeTruthy();
             expect(result2.error.message.includes('at least 3')).toBeTruthy();
         }
 
-        // Test with object schema - must wrap with z.object()
-        const objSchema = z.object({ name: z.string(), age: z.number().int() });
-        const result3 = z.safeParse(objSchema, { name: 'John', age: 30 });
+        // Test with object schema - must wrap with object()
+        const objSchema = object({ name: string(), age: number().int() });
+        const result3 = zod.safeParse(objSchema, { name: 'John', age: 30 });
         expect(result3.success).toBe(true);
         if (result3.success) {
             expect(result3.data.name).toBe('John');
@@ -1166,7 +1170,7 @@ describe('Validator', () => {
         }
 
         // Test with invalid object
-        const result4 = z.safeParse(objSchema, { name: 'Jane', age: 'invalid' });
+        const result4 = zod.safeParse(objSchema, { name: 'Jane', age: 'invalid' });
         expect(result4.success).toBe(false);
         if (!result4.success) {
             expect(result4.error instanceof Error).toBeTruthy();

@@ -3,8 +3,8 @@ import { z } from './zody';
 @z.Schema({ inferDefault: true })
 class User {
   @z.int.min(1) id!: number;
-  @z.min(3) name = 'john';
-  @z.email.optional email?: string;
+  @z.string.minLength(3) name = 'john';
+  @z.string.email.optional email?: string;
   @z.bigint visits!: bigint;
 }
 

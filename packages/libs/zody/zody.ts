@@ -425,7 +425,9 @@ const stringValidator = () => createValidator('string', (v) => {
 
 const numberValidator = () => createValidator('number', (v) => {
   if (typeof v === 'number') return v;
-  throw new Error(`Expected number, received ${typeof v}`);
+  const coerced = Number(v);
+  if (Number.isNaN(coerced)) throw new Error(`Cannot coerce ${typeof v} to number`);
+  return coerced;
 });
 
 const booleanValidator = () => createValidator('boolean', (v) => {
@@ -435,12 +437,18 @@ const booleanValidator = () => createValidator('boolean', (v) => {
 
 const bigintValidator = () => createValidator('bigint', (v) => {
   if (typeof v === 'bigint') return v;
-  throw new Error(`Expected bigint, received ${typeof v}`);
+  try {
+    return BigInt(v);
+  } catch {
+    throw new Error(`Cannot coerce ${typeof v} to bigint`);
+  }
 });
 
 const dateValidator = () => createValidator('Date', (v) => {
   if (v instanceof Date) return v;
-  throw new Error(`Expected Date, received ${typeof v}`);
+  const coerced = new Date(v);
+  if (isNaN(coerced.getTime())) throw new Error(`Cannot coerce ${typeof v} to Date`);
+  return coerced;
 });
 
 const arrayValidator = (inner: Validator<any> = { parse: (v) => v, safeParse: (v) => ({ success: true, data: v }) } as any) => {
@@ -1071,15 +1079,20 @@ function buildPropertySchema(field: FieldMeta): Record<string, any> {
   return schema;
 }
 
-// Functional-layer exports for ad-hoc/test schemas
-export const string = stringValidator;
-export const number = numberValidator;
-export const boolean = booleanValidator;
-export const bigint = bigintValidator;
-export const date = dateValidator;
-export const array = arrayValidator;
-export const object = objectValidator;
-export const unknown = unknownValidator;
+// Internal functional-layer exports for test schemas within zody package
+// These are not exported from the main barrel (index.ts) to avoid namespace collision
+// but are available for internal tests and ad-hoc schemas
+const string = stringValidator;
+const number = numberValidator;
+const boolean = booleanValidator;
+const bigint = bigintValidator;
+const date = dateValidator;
+const array = arrayValidator;
+const object = objectValidator;
+const unknown = unknownValidator;
+
+// Export for internal/test use only
+export { string, number, boolean, bigint, date, array, object, unknown };
 
 // Type for zody class constructors
 export type ZodyCtor<T = any> = {

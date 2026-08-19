@@ -1,7 +1,7 @@
 # Zody Migration TODO
 
 ## Current Status
-Zody decorator-based validation framework is ~80% implemented. Core infrastructure is in place, but field metadata population needs work.
+Zody decorator-based validation framework is ~90% complete. Stage 1 compiler is implemented. Package consolidation complete: validator.ts, schema.ts, and all tests relocated to zody; functional namespace renamed to `zod`; app schemas migrated to decorator-based classes.
 
 ## Critical Gap: Field Metadata Population
 
@@ -57,8 +57,11 @@ One of these approaches:
 - [x] Created parse.ts (parseValidate/safeParseValidate)
 - [x] Updated swagger.ts for function-typed schemas
 - [x] Removed validator methods from immutable.ts
+- [x] Stage 1 compiler — closure-based compilation layer with compile() on all validator types
+- [x] Coercion behavior — number/bigint/date primitives now coerce input like validator.ts
+- [x] Rewrite hello.ts and health.ts as zody classes
+- [x] Delete packages/libs/validator directory (consolidated into zody)
+- [x] Functional namespace renamed to `zod`, decorator namespace remains `z`
 - [ ] Fix metadata population for required fields
 - [ ] Port all validator tests to zody
-- [ ] Rewrite hello.ts and health.ts as zody classes
 - [ ] Full integration testing
-- [ ] Delete packages/libs/validator directory

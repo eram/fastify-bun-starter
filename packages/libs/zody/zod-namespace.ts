@@ -1,8 +1,13 @@
 /**
- * * @module validator
+ * @module zody/zod-namespace
  *
- * This module provides integration between Fastify and a custom JSON validator.
- * It includes type providers, schema compilers, and type inference utilities.
+ * Zod-compatible functional validator namespace.
+ * Provides the functional validator API (zod.string(), zod.number(), etc.)
+ * as an alternative to the decorator-based @z.Schema() system.
+ *
+ * This namespace was relocated from packages/libs/validator/index.ts
+ * and renamed from `z` to `zod` to avoid collision with the `z` decorator namespace.
+ *
  * The lib replaces the usage of several common utility npm packages that carry with them
  * unwanted dependencies and bloat:
  * 1. zod - https://github.com/colinhacks/zod
@@ -10,7 +15,6 @@
  * 3. @fastify/type-provider-typebox - https://www.npmjs.com/package/@fastify/type-provider-typebox
  * 4. zod-to-json-schema - https://www.npmjs.com/package/zod-to-json-schema
  * 5. json-schema-to-zod - https://www.npmjs.com/package/json-schema-to-zod
- *
  */
 
 import { fromJsonSchema, toJsonSchema } from './schema';
@@ -70,14 +74,11 @@ import {
     voidVal,
 } from './validator';
 
-export * from './schema';
-export * from './validator';
-
 //
 // Zod-like API export for backwards compatibility
 //
 
-export namespace z {
+export namespace zod {
     export type ZodType<T = unknown> = TypeV<T>;
     // biome-ignore lint/suspicious/noExplicitAny: Zod compatibility - generic object type
     export type ZodObject = ObjV<any>;
@@ -95,7 +96,7 @@ export namespace z {
  * Zod-compatible safeParse function
  * Returns { success: true, data } or { success: false, error }
  */
-function zodSafeParse<T>(validator: Validator<T>, value: unknown): z.ZodSafeParseResult<T> {
+function zodSafeParse<T>(validator: Validator<T>, value: unknown): zod.ZodSafeParseResult<T> {
     try {
         const data = validator.parse(value);
         return { success: true, data };
@@ -104,7 +105,7 @@ function zodSafeParse<T>(validator: Validator<T>, value: unknown): z.ZodSafePars
     }
 }
 
-export const z = {
+export const zod = {
     // Primitives
     string,
     number,
