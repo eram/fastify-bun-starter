@@ -5,6 +5,9 @@ import { describe, expect, spyOn, test } from 'bun:test';
 import { sleep } from '@libs/utils/time';
 import { SSESession } from './sse-session';
 
+// Type-safe globalThis for spyOn calls
+const getGlobalScope = (): typeof globalThis => globalThis as unknown as typeof globalThis;
+
 describe('SSESession', () => {
     test('should parse sessionId from endpoint event', async () => {
         // Mock stream with endpoint event
@@ -500,7 +503,7 @@ describe('SSESession', () => {
             state: { failures: 0 },
         };
 
-        const mockFetch = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
+        const mockFetch = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => {
             return new Response(JSON.stringify({ success: true }), {
                 status: 200,
             });
@@ -539,7 +542,7 @@ describe('SSESession', () => {
             state: { failures: 0 },
         };
 
-        const mockFetch = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
+        const mockFetch = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => {
             return new Response('Server Error', { status: 500, statusText: 'Internal Server Error' });
         });
         try {

@@ -3,6 +3,9 @@ import { sleep } from '@libs/utils/time';
 import { ApiClient, ClientOptions, PromiseRetry } from './api-client';
 import { SSESession } from './sse-session';
 
+// Type-safe globalThis for spyOn calls
+const getGlobalScope = (): typeof globalThis => globalThis as unknown as typeof globalThis;
+
 describe('ApiClient', () => {
     const baseURL = 'https://api.example.com';
 
@@ -13,7 +16,7 @@ describe('ApiClient', () => {
 
     test('ApiClient positive', async (_t) => {
         const mockResponse = { data: 'success' };
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async (input: string) => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async (input: string) => {
             expect(input.startsWith(baseURL)).toBeTruthy();
             return new Response(JSON.stringify(mockResponse), { status: 200 });
         });
@@ -29,7 +32,7 @@ describe('ApiClient', () => {
 
     test('retry on failure and eventually succeed', async (_t) => {
         const mockResponse = { data: 'ok' };
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => {
             if (fn.mock.calls.length < 2) {
                 return new Response('Error', { status: 500 });
             }
@@ -51,8 +54,8 @@ describe('ApiClient', () => {
     });
 
     test('fail after max retries', async (_t) => {
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(
-            async () => new Response('Error', { status: 500 }) as any,
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(
+            async () => new Response('Error', { status: 500 }),
         );
         try {
             const client = new ApiClient(baseURL, { maxTries: 2, baseDelay: 1 });
@@ -68,7 +71,7 @@ describe('ApiClient', () => {
     });
 
     test('fetch with timeout', async (_t) => {
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => {
             // Mock fetch takes 100ms but timeout is set to 50ms
             await sleep(100);
             return new Response(JSON.stringify({ data: 'ok' }), { status: 200 });
@@ -88,7 +91,7 @@ describe('ApiClient', () => {
     });
 
     test('fetch with abort', async (_t) => {
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => {
             await sleep(10);
             return new Response('OK', { status: 200 });
         });
@@ -107,7 +110,7 @@ describe('ApiClient', () => {
     });
 
     test('fetch with external signal', async (_t) => {
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => {
             await sleep(10);
             return new Response('OK', { status: 200 });
         });
@@ -135,7 +138,7 @@ describe('ApiClient', () => {
     });
 
     test('afterFn = stream', async (_t) => {
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => {
             // Create a ReadableStream that returns Uint8Array data
             const text = new TextEncoder().encode('stream-data');
             const mockStream = new ReadableStream<Uint8Array>({
@@ -164,7 +167,7 @@ describe('ApiClient', () => {
     });
 
     test('afterFn = function', async (_t) => {
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => {
             return new Response('text-data', { status: 200 });
         });
         try {
@@ -183,7 +186,7 @@ describe('ApiClient', () => {
 
     test('static fetch uses client pool for same origin and options', async (_t) => {
         const mockResponse = { data: 'pooled' };
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => {
             return new Response(JSON.stringify(mockResponse), { status: 200 });
         });
         try {
@@ -215,7 +218,7 @@ describe('ApiClient', () => {
 
     test('static fetch creates separate clients for different origins', async (_t) => {
         const mockResponse = { data: 'separate' };
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => {
             return new Response(JSON.stringify(mockResponse), { status: 200 });
         });
         try {
@@ -238,7 +241,7 @@ describe('ApiClient', () => {
 
     test('static fetch pool respects maxPoolSize with LRU eviction', async (_t) => {
         const mockResponse = { data: 'lru' };
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => {
             return new Response(JSON.stringify(mockResponse), { status: 200 });
         });
         try {
@@ -264,7 +267,7 @@ describe('ApiClient', () => {
 
     test('static fetch creates separate pool entries for different bearer tokens', async (_t) => {
         const mockResponse = { data: 'token' };
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => {
             return Promise.resolve(new Response(JSON.stringify(mockResponse), { status: 200 }));
         });
         try {
@@ -284,7 +287,7 @@ describe('ApiClient', () => {
 
     test('userAgent sets User-Agent header', async (_t) => {
         const mockResponse = { data: 'success' };
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async (_input: string, init?: RequestInit) => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async (_input: string, init?: RequestInit) => {
             // Verify User-Agent header is set
             const headers = new Headers(init?.headers);
             expect(headers.get('User-Agent')).toBe('test-agent/1.0.0');
@@ -303,7 +306,7 @@ describe('ApiClient', () => {
 
     test('userAgent merges with request headers', async (_t) => {
         const mockResponse = { data: 'success' };
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async (_input: string, init?: RequestInit) => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async (_input: string, init?: RequestInit) => {
             const headers = new Headers(init?.headers);
             expect(headers.get('User-Agent')).toBe('test-agent/2.0.0');
             expect(headers.get('X-Custom')).toBe('custom-value');
@@ -323,8 +326,8 @@ describe('ApiClient', () => {
     });
 
     test('retry handles catch callback', async (_t) => {
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(
-            async () => new Response('Error', { status: 500 }) as any,
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(
+            async () => new Response('Error', { status: 500 }),
         );
         try {
             const client = new ApiClient(baseURL, { maxTries: 1, baseDelay: 1 });
@@ -344,7 +347,7 @@ describe('ApiClient', () => {
     });
 
     test('retry handles finally callback', async (_t) => {
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(
             async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
         );
         let finallyCalled = false;
@@ -363,7 +366,7 @@ describe('ApiClient', () => {
     });
 
     test('retry with non-200 status retries', async (_t) => {
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => {
             if (fn.mock.calls.length < 2) {
                 return new Response('Not Found', { status: 404 });
             }
@@ -383,7 +386,7 @@ describe('ApiClient', () => {
 
     test('bearerToken adds Authorization header', async (_t) => {
         const mockResponse = { data: 'authorized' };
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async (_input: string, init?: RequestInit) => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async (_input: string, init?: RequestInit) => {
             const headers = new Headers(init?.headers);
             expect(headers.get('Authorization')).toBe('Bearer secret-token');
             return new Response(JSON.stringify(mockResponse), { status: 200 });
@@ -407,7 +410,7 @@ describe('ApiClient', () => {
             },
         });
 
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => {
             return new Response(stream, {
                 status: 200,
                 headers: { 'Content-Type': 'text/event-stream' },
@@ -440,7 +443,7 @@ describe('ApiClient', () => {
             },
         });
 
-        const fn = spyOn(globalThis as any, 'fetch').mockImplementation(async () => {
+        const fn = spyOn(getGlobalScope(), 'fetch').mockImplementation(async () => {
             return new Response(stream, {
                 status: 200,
                 headers: { 'Content-Type': 'text/event-stream' },

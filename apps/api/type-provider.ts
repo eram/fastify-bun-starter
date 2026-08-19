@@ -28,7 +28,7 @@ export interface Provider extends FastifyTypeProvider {
  * Works with both functional validators (plain objects with .parse method)
  * and zody class constructors (functions with static .parse method)
  */
-function isValidator(schema: any): schema is ValidatorLike {
+function isValidator(schema: unknown): schema is ValidatorLike {
     // Functional validator: plain object with parse method
     if (typeof schema === 'object' && schema !== null && 'parse' in schema && typeof schema.parse === 'function') {
         return true;

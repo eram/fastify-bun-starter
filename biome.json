@@ -29,7 +29,7 @@
       "preset": "recommended",
       "suspicious": {
         "noConsole": "off",
-        "noExplicitAny": "warn",
+        "noExplicitAny": "error",
         "noAssignInExpressions": "off"
       },
       "complexity": {

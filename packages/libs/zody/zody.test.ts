@@ -135,7 +135,7 @@ test('autocompile option triggers compilation on class decoration', async () => 
     await new Promise((resolve) => setImmediate(resolve));
 
     // After autocompile, cache should be populated
-    const hasCache = (AutocompileUser as any)[cache] !== undefined;
+    const hasCache = (AutocompileUser as unknown as { [key: symbol]: unknown })[cache] !== undefined;
     expect(hasCache).toBe(true);
 
     // Verify the compiled validator works

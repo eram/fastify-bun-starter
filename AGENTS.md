@@ -20,14 +20,15 @@ This file provides guidance to AI coding agents when working with code in this r
 
 ### Coding patterns
 
-- Code assumes Bun >= 1.03 with Node.js API >= v24 (see package.json engine field). Always prefer to use latest native APIs.
+- Code assumes Bun >= 1.3 with Node.js API >= v24 (see package.json engine field). Always prefer to use latest native APIs.
 - tsconfig: Module=ESNext; Resolution=bundler; Strict mode; Source maps enabled for better debugging. always noEmit.
 - Do not use imports from "bun:*" namespaces and Bun-specific globals. We keep strict adherence with Node.js >=24 APIs for backwards compatibility of the project codebase.
 - Never use `null` in the code >>> use `undefined` instead.
-- Never use `any` in the code >>> use `unknown` instead. Addtional patterns to replace any:
+- Never use `any` in the code >>> use `unknown` or `object` instead. Addtional patterns to replace any:
   - `(window as any).getVar()` >>> `Object(window).getVar()`
   - `mockFetch as any` >>> `mockFetch as never`
   - `function x(props: any)` >>> `function x(props: Record<string,unknown>)`
+  - adding biome-ignore requires user permission
 - Never use 'eval' in the code >>> use 'new Function' instead.
 - Use type validations and schemas from the Validator internal (instead of TypeBox or Zod).
 - Use plain console.log/error for logging in code. Use Logger from src/util for scoped logger.

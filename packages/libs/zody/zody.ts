@@ -2,13 +2,13 @@
 import { ErrorEx } from '@libs/utils/error';
 
 // Compiled validator node for fast execution
-type CompiledNode<T = any> = {
+type CompiledNode<T = unknown> = {
     validate(input: unknown): boolean;
     parse(input: unknown): T;
 };
 
 // Local Validator type - zody is self-contained with no external dependencies
-type Validator<T = any> = {
+type Validator<T = unknown> = {
     parse(input: unknown): T;
     safeParse(input: unknown): { success: boolean; data?: T; error?: Error };
     compile?(): CompiledNode<T>;
@@ -43,7 +43,7 @@ type Validator<T = any> = {
     [key: string]: any;
 };
 
-type Ctor<T = any> = abstract new (...args: any[]) => T;
+type Ctor<T = unknown> = abstract new (...args: unknown[]) => T;
 type PrimitiveKind = 'string' | 'number' | 'boolean' | 'bigint' | 'date';
 type RootKind = PrimitiveKind | 'array' | 'union' | 'literal' | 'enum' | 'object';
 
@@ -53,10 +53,10 @@ const PHANTOM = Symbol.for('zody.phantom');
 const _PENDING_FIELDS_KEY = Symbol.for('zody.pending_fields');
 
 // Global registry for field decorator info, keyed by class constructor
-const decorationRegistry = new WeakMap<any, Map<string, Op[]>>();
-let lastDecoratedClass: any = null;
+const decorationRegistry = new WeakMap<object, Map<string, Op[]>>();
+let lastDecoratedClass: object | null = null;
 
-function setLastDecoratedClass(ctor: any): void {
+function setLastDecoratedClass(ctor: object): void {
     lastDecoratedClass = ctor;
 }
 
@@ -74,7 +74,7 @@ function registerFieldDecoration(fieldName: string, ops: Op[]): void {
     fields.get(fieldName)!.push(...ops);
 }
 
-function getFieldDecorations(ctor: any): Map<string, Op[]> | undefined {
+function getFieldDecorations(ctor: object): Map<string, Op[]> | undefined {
     return decorationRegistry.get(ctor);
 }
 
@@ -143,7 +143,7 @@ function createValidator<T>(
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: validation logic necessarily complex
     const parse = (input: unknown): T => {
         // During class initialization, be lenient with undefined values
-        const isInitializing = (globalThis as any).__z_initializing__;
+        const isInitializing = (globalThis as unknown).__z_initializing__;
         if (isInitializing && input === undefined) return undefined as T;
 
         if (options.optional && input === undefined) return undefined as T;
@@ -154,9 +154,9 @@ function createValidator<T>(
 
         // String transforms (apply before length checks)
         if (typeof result === 'string') {
-            if (options.trim) result = (result as any).trim();
-            if (options.toLowerCase) result = (result as any).toLowerCase();
-            if (options.toUpperCase) result = (result as any).toUpperCase();
+            if (options.trim) result = (result as unknown).trim();
+            if (options.toLowerCase) result = (result as unknown).toLowerCase();
+            if (options.toUpperCase) result = (result as unknown).toUpperCase();
         }
 
         // Format validations for strings
@@ -226,22 +226,22 @@ function createValidator<T>(
             if (options.float && typeof result === 'number' && Number.isInteger(result)) {
                 // Allow floats that happen to be integers
             }
-            if (options.min !== undefined && result < (options.min as any)) {
+            if (options.min !== undefined && result < (options.min as unknown)) {
                 throw new ZodyError(`Expected >= ${options.min}, received ${result}`);
             }
-            if (options.max !== undefined && result > (options.max as any)) {
+            if (options.max !== undefined && result > (options.max as unknown)) {
                 throw new ZodyError(`Expected <= ${options.max}, received ${result}`);
             }
-            if (options.gte !== undefined && result < (options.gte as any)) {
+            if (options.gte !== undefined && result < (options.gte as unknown)) {
                 throw new ZodyError(`Expected >= ${options.gte}, received ${result}`);
             }
-            if (options.lte !== undefined && result > (options.lte as any)) {
+            if (options.lte !== undefined && result > (options.lte as unknown)) {
                 throw new ZodyError(`Expected <= ${options.lte}, received ${result}`);
             }
-            if (options.gt !== undefined && result <= (options.gt as any)) {
+            if (options.gt !== undefined && result <= (options.gt as unknown)) {
                 throw new ZodyError(`Expected > ${options.gt}, received ${result}`);
             }
-            if (options.lt !== undefined && result >= (options.lt as any)) {
+            if (options.lt !== undefined && result >= (options.lt as unknown)) {
                 throw new ZodyError(`Expected < ${options.lt}, received ${result}`);
             }
         }
@@ -264,7 +264,7 @@ function createValidator<T>(
     validator.compile = (): CompiledNode<T> => {
         // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: validation logic necessarily complex
         const compiledParse = (input: unknown): T => {
-            const isInitializing = (globalThis as any).__z_initializing__;
+            const isInitializing = (globalThis as unknown).__z_initializing__;
             if (isInitializing && input === undefined) return undefined as T;
 
             if (options.optional && input === undefined) return undefined as T;
@@ -275,9 +275,9 @@ function createValidator<T>(
 
             // String transforms (apply before length checks)
             if (typeof result === 'string') {
-                if (options.trim) result = (result as any).trim();
-                if (options.toLowerCase) result = (result as any).toLowerCase();
-                if (options.toUpperCase) result = (result as any).toUpperCase();
+                if (options.trim) result = (result as unknown).trim();
+                if (options.toLowerCase) result = (result as unknown).toLowerCase();
+                if (options.toUpperCase) result = (result as unknown).toUpperCase();
             }
 
             // Format validations for strings
@@ -347,22 +347,22 @@ function createValidator<T>(
                 if (options.float && typeof result === 'number' && Number.isInteger(result)) {
                     // Allow floats that happen to be integers
                 }
-                if (options.min !== undefined && result < (options.min as any)) {
+                if (options.min !== undefined && result < (options.min as unknown)) {
                     throw new ZodyError(`Expected >= ${options.min}, received ${result}`);
                 }
-                if (options.max !== undefined && result > (options.max as any)) {
+                if (options.max !== undefined && result > (options.max as unknown)) {
                     throw new ZodyError(`Expected <= ${options.max}, received ${result}`);
                 }
-                if (options.gte !== undefined && result < (options.gte as any)) {
+                if (options.gte !== undefined && result < (options.gte as unknown)) {
                     throw new ZodyError(`Expected >= ${options.gte}, received ${result}`);
                 }
-                if (options.lte !== undefined && result > (options.lte as any)) {
+                if (options.lte !== undefined && result > (options.lte as unknown)) {
                     throw new ZodyError(`Expected <= ${options.lte}, received ${result}`);
                 }
-                if (options.gt !== undefined && result <= (options.gt as any)) {
+                if (options.gt !== undefined && result <= (options.gt as unknown)) {
                     throw new ZodyError(`Expected > ${options.gt}, received ${result}`);
                 }
-                if (options.lt !== undefined && result >= (options.lt as any)) {
+                if (options.lt !== undefined && result >= (options.lt as unknown)) {
                     throw new ZodyError(`Expected < ${options.lt}, received ${result}`);
                 }
             }
@@ -464,7 +464,7 @@ const dateValidator = () =>
         return coerced;
     });
 
-const arrayValidator = (inner: Validator<any> = { parse: (v) => v, safeParse: (v) => ({ success: true, data: v }) } as any) => {
+const arrayValidator = (inner: Validator<any> = { parse: (v) => v, safeParse: (v) => ({ success: true, data: v }) } as unknown) => {
     const validator = createValidator('array', (v) => {
         if (!Array.isArray(v)) throw new Error(`Expected array, received ${typeof v}`);
         return v.map((item) => inner.parse(item));
@@ -499,7 +499,7 @@ const objectValidator = (shape: Record<string, Validator<any>>) => {
         if (typeof v !== 'object' || v === null) throw new Error(`Expected object, received ${typeof v}`);
         const result: any = {};
         for (const [key, validator] of Object.entries(shape)) {
-            result[key] = validator.parse((v as any)[key]);
+            result[key] = validator.parse((v as unknown)[key]);
         }
         return result;
     });
@@ -518,7 +518,7 @@ const objectValidator = (shape: Record<string, Validator<any>>) => {
             validate(input: unknown): boolean {
                 if (typeof input !== 'object' || input === null) return false;
                 for (const [key, compiled] of compiledFields) {
-                    if (!compiled.validate((input as any)[key])) return false;
+                    if (!compiled.validate((input as unknown)[key])) return false;
                 }
                 return true;
             },
@@ -590,7 +590,7 @@ type DecoratorFn = ((value: undefined, context: ClassFieldDecoratorContext) => v
 type InferIn<T extends Ctor> = T extends { toZod(): Validator<infer S> } ? Parameters<Validator<S>['parse']>[0] : never;
 type InferOut<T extends Ctor> = T extends { toZod(): Validator<infer S> } ? S : never;
 
-function getClassMeta(ctor: any): ClassMeta {
+function getClassMeta(ctor: object): ClassMeta {
     if (!ctor[META_KEY]) {
         Object.defineProperty(ctor, META_KEY, {
             value: { fields: new Map(), inferDefault: true } satisfies ClassMeta,
@@ -612,7 +612,7 @@ function getOrCreateFieldMeta(owner: any, key: string): FieldMeta {
     return field;
 }
 
-function _tsCtorToRoot(ctor: any): RootKind | undefined {
+function _tsCtorToRoot(ctor: object): RootKind | undefined {
     if (ctor === String) return 'string';
     if (ctor === Number) return 'number';
     if (ctor === Boolean) return 'boolean';
@@ -630,11 +630,11 @@ function makeDecorator(spec: ChainSpec): DecoratorFn {
 
         // Store the decorator spec on the context metadata for later retrieval
         // This allows the Schema decorator to access field decorator info without needing instances
-        const metadata = (context.metadata as any) ?? {};
+        const metadata = (context.metadata as unknown) ?? {};
         if (!metadata[Symbol.for('zody.fields')]) {
             metadata[Symbol.for('zody.fields')] = {};
         }
-        (metadata[Symbol.for('zody.fields')] as any)[fieldName] = {
+        (metadata[Symbol.for('zody.fields')] as unknown)[fieldName] = {
             ops: spec.ops,
         };
 
@@ -644,7 +644,7 @@ function makeDecorator(spec: ChainSpec): DecoratorFn {
             if (initializerRan) return; // Prevent duplicate execution
             initializerRan = true;
 
-            const ctor = (this as any).constructor;
+            const ctor = (this as unknown).constructor;
 
             // Register the field decoration in the global registry
             registerFieldDecoration(fieldName, spec.ops);
@@ -656,7 +656,7 @@ function makeDecorator(spec: ChainSpec): DecoratorFn {
             }
 
             // Capture the initial value (default) if present
-            const current = (this as any)[fieldName];
+            const current = (this as unknown)[fieldName];
             if (current !== undefined) {
                 field.defaultValue = current;
                 field.inferredType ??= inferFromValue(current);
@@ -711,7 +711,7 @@ function makeDecorator(spec: ChainSpec): DecoratorFn {
     dec.lt = (value: number | bigint) => plus({ kind: 'lt', value });
     dec.default = (value: unknown) => plus({ kind: 'default', value });
     dec.array = (inner?: ChainSpec | DecoratorFn) => {
-        const innerSpec = inner && 'ops' in (inner as any) ? (inner as any as ChainSpec) : { ops: [] };
+        const innerSpec = inner && 'ops' in (inner as unknown) ? (inner as unknown as ChainSpec) : { ops: [] };
         return makeDecorator({ ops: [...spec.ops, { kind: 'root', value: 'array' }, { kind: 'arrayOf', value: innerSpec }] });
     };
     dec.union = (options: (ChainSpec | DecoratorFn)[]) => plus({ kind: 'unionOf', value: options as ChainSpec[] });
@@ -751,7 +751,7 @@ function inferFromValue(value: unknown): RootKind | undefined {
     }
 }
 
-function gatherMeta(ctor: any): ClassMeta {
+function gatherMeta(ctor: object): ClassMeta {
     const chain: any[] = [];
     let cur = ctor;
     while (cur && cur !== Function.prototype) {
@@ -799,22 +799,22 @@ function applyOps(schema: any, field: FieldMeta): any {
                 schema = schema.float();
                 break;
             case 'min':
-                schema = schema.min(op.value as any);
+                schema = schema.min(op.value as unknown);
                 break;
             case 'max':
-                schema = schema.max(op.value as any);
+                schema = schema.max(op.value as unknown);
                 break;
             case 'gte':
-                schema = schema.gte(op.value as any);
+                schema = schema.gte(op.value as unknown);
                 break;
             case 'lte':
-                schema = schema.lte(op.value as any);
+                schema = schema.lte(op.value as unknown);
                 break;
             case 'gt':
-                schema = schema.gt(op.value as any);
+                schema = schema.gt(op.value as unknown);
                 break;
             case 'lt':
-                schema = schema.lt(op.value as any);
+                schema = schema.lt(op.value as unknown);
                 break;
             case 'email':
                 schema = schema.email();
@@ -873,7 +873,7 @@ function applyOps(schema: any, field: FieldMeta): any {
                 schema = schema.nullable();
                 break;
             case 'default':
-                schema = schema.default(op.value as any);
+                schema = schema.default(op.value as unknown);
                 break;
         }
     }
@@ -924,12 +924,12 @@ function toZodFromSpec(spec: ChainSpec): any {
     return toZodNode(fake);
 }
 
-function makeCompiledValidate(schema: any) {
+function makeCompiledValidate(schema: object) {
     const compiled = schema.compile?.();
     return compiled ? (input: unknown) => compiled.validate(input) : (input: unknown) => schema.safeParse(input).success;
 }
 
-function buildArtifacts(ctor: any) {
+function buildArtifacts(ctor: object) {
     if (ctor[CACHE]) return ctor[CACHE];
     const meta = gatherMeta(ctor);
     const shape: Record<string, any> = {};
@@ -950,7 +950,7 @@ function Schema(options?: { inferDefault?: boolean; autocompile?: boolean }) {
         meta.inferDefault = options?.inferDefault ?? true;
         const shouldAutocompile = options?.autocompile ?? false;
 
-        class ZodyClass extends (target as any) {
+        class ZodyClass extends (target as unknown) {
             static toZod() {
                 return buildArtifacts(ZodyClass).schema;
             }
@@ -1009,14 +1009,14 @@ function Schema(options?: { inferDefault?: boolean; autocompile?: boolean }) {
         // Trigger field initializers by creating a temporary instance with undefined values
         // This ensures field decorator metadata is populated at class definition time
         // Mark that we're in initialization mode so validators don't throw on undefined
-        const originalIsInitializing = (globalThis as any).__z_initializing__;
-        (globalThis as any).__z_initializing__ = true;
+        const originalIsInitializing = (globalThis as unknown).__z_initializing__;
+        (globalThis as unknown).__z_initializing__ = true;
         try {
-            new (ZodyClass as any)();
+            new (ZodyClass as unknown)();
         } catch (_e) {
             // Ignore errors from instantiation - some initializers may have run anyway
         } finally {
-            (globalThis as any).__z_initializing__ = originalIsInitializing;
+            (globalThis as unknown).__z_initializing__ = originalIsInitializing;
         }
 
         // Populate any missing field metadata from the global decoration registry
@@ -1045,7 +1045,7 @@ function Schema(options?: { inferDefault?: boolean; autocompile?: boolean }) {
             });
         }
 
-        return ZodyClass as any;
+        return ZodyClass as unknown;
     };
 }
 
