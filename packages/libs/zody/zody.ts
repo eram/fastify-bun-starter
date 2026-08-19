@@ -40,6 +40,7 @@ type Validator<T = unknown> = {
     maxLength(len: number): Validator<T>;
     length(len: number): Validator<T>;
     describe(text: string): Validator<T>;
+    // biome-ignore lint/suspicious/noExplicitAny: TypeScript index signatures require any, no unknown alternative
     [key: string]: any;
 };
 
@@ -260,7 +261,6 @@ function createValidator<T>(
     };
 
     // Compile into a specialized fast path
-    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: compilation dispatches all type handlers
     validator.compile = (): CompiledNode<T> => {
         // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: validation logic necessarily complex
         const compiledParse = (input: unknown): T => {
