@@ -533,9 +533,9 @@ const objectValidator = (shape: Record<string, Validator<unknown>>) => {
     return validator;
 };
 
-export type ZodyInfer<T extends { [PHANTOM]?: any }> = T extends { [PHANTOM]?: infer O } ? O : never;
-export type ZodyInferInput<T extends { [PHANTOM]?: any }> = T extends { [PHANTOM]?: { input: infer I } } ? I : never;
-export type ZodyInferOutput<T extends { [PHANTOM]?: any }> = T extends { [PHANTOM]?: { output: infer O } } ? O : never;
+export type ZodyInfer<T extends { [PHANTOM]?: unknown }> = T extends { [PHANTOM]?: infer O } ? O : never;
+export type ZodyInferInput<T extends { [PHANTOM]?: unknown }> = T extends { [PHANTOM]?: { input: infer I } } ? I : never;
+export type ZodyInferOutput<T extends { [PHANTOM]?: unknown }> = T extends { [PHANTOM]?: { output: infer O } } ? O : never;
 
 type Op =
     | { kind: 'root'; value: RootKind }
