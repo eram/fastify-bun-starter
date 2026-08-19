@@ -754,7 +754,7 @@ function inferFromValue(value: unknown): RootKind | undefined {
 }
 
 function gatherMeta(ctor: object): ClassMeta {
-    const chain: any[] = [];
+    const chain: object[] = [];
     let cur = ctor;
     while (cur && cur !== Function.prototype) {
         if (cur[META_KEY]) chain.unshift(cur[META_KEY]);
@@ -789,7 +789,7 @@ function normalizeField(field: FieldMeta, inferDefault: boolean): FieldMeta {
     return out;
 }
 
-function applyOps(schema: any, field: FieldMeta): any {
+function applyOps(schema: object, field: FieldMeta): object {
     for (const op of field.ops) {
         switch (op.kind) {
             case 'root':
@@ -921,7 +921,7 @@ function toZodNode(field: FieldMeta): Validator<unknown> {
     return applyOps(schema, field);
 }
 
-function toZodFromSpec(spec: ChainSpec): any {
+function toZodFromSpec(spec: ChainSpec): object {
     const fake: FieldMeta = normalizeField({ key: '<inline>', ops: spec.ops }, false);
     return toZodNode(fake);
 }
@@ -1180,7 +1180,7 @@ const unknown = unknownValidator;
 export { array, bigint, boolean, date, number, object, string, unknown };
 
 // Type for zody class constructors
-export type ZodyCtor<T = any> = {
+export type ZodyCtor<T = unknown> = {
     parse(input: unknown): T;
     safeParse(input: unknown): { success: boolean; data?: T; error?: Error };
     toZod(): Validator<T>;
