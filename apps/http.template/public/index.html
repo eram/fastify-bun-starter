@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Aggregator</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+
+    <!-- Classless CSS for base styling -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/digitallytailored/classless@latest/classless.min.css">
+
+    <script>
+        // Initialize theme before content loads to prevent flash
+        const initialTheme = localStorage.getItem('theme') === 'dark' ||
+            (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.setAttribute('color-scheme', initialTheme ? 'dark' : 'light');
+    </script>
+
+    <style>
+        /* Dropdown Menu Styles */
+        .menu {
+            position: relative;
+            display: inline-block;
+        }
+
+        .menu-trigger {
+            cursor: pointer;
+        }
+
+        .menu-content {
+            position: fixed;
+            min-width: 200px;
+            background-color: var(--card-bg);
+            box-shadow: var(--shadow-lg);
+            z-index: 10000;
+            font-size: var(--font-size-base, 1rem);
+        }
+
+        .menu-item {
+            display: block;
+            padding: calc(var(--spacing-base, 1rem) * 0.75) var(--spacing-base, 1rem);
+            cursor: pointer;
+            text-decoration: none;
+            color: var(--body-color);
+            transition: var(--transition-base);
+        }
+
+        .menu-item:hover {
+            background-color: var(--secondary);
+            color: white;
+        }
+
+        .menu-item.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .menu-item-text {
+            display: inline;
+        }
+
+        .menu-item-shortcut {
+            opacity: 0.6;
+            font-size: var(--font-size-sm, 0.875rem);
+            margin-left: 1rem;
+        }
+
+        .menu-label {
+            padding: calc(var(--spacing-base, 1rem) * 0.75) var(--spacing-base, 1rem);
+            font-weight: var(--font-weight-bold, 600);
+            opacity: 0.8;
+            font-size: var(--font-size-sm, 0.875rem);
+            text-transform: uppercase;
+        }
+
+        .menu-separator {
+            margin: 0;
+            border: none;
+            border-top: 1px solid var(--border-color, rgba(0, 0, 0, 0.1));
+        }
+
+        .menu-submenu {
+            position: relative;
+        }
+
+        .menu-submenu-trigger {
+            position: relative;
+        }
+
+        .menu-submenu-arrow {
+            margin-left: auto;
+            opacity: 0.6;
+        }
+
+        .menu-submenu-content {
+            position: absolute;
+            left: 100%;
+            top: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app"></div>
+    <script type="importmap">
+        { "imports": { "@components/": "/app/components/" } }
+    </script>
+    <script type="module" src="/app/views/index.ts"></script>
+</body>
+
+</html>

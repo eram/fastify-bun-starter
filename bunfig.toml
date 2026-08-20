@@ -1,10 +1,7 @@
 [test]
-# Preload mock utility for tests
-preload = ["./script/mock-prehook.ts"]
+# Preload Bun-version guard and DOM APIs for tests
+# Note: happy-dom is configured to preserve Bun's native fetch/EventTarget
+preload = ["./scripts/happy-dom.ts"]
 
 # Coverage configuration
-# Note: coverage, coverageReporter are passed via CLI for better control
-# coverageSkipTestFiles excludes test files from coverage (default: false)
 coverageSkipTestFiles = true
-# coveragePathIgnorePatterns excludes specific patterns from coverage
-coveragePathIgnorePatterns = ["**/cluster.ts", "**/index.ts"]

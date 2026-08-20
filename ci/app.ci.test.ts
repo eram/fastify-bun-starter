@@ -1,17 +1,16 @@
 // ci/app.ci.test.ts
-// Integration tests for the app CLI using node:test
+// Integration tests for the app CLI using bun:test
 
-import { match } from 'node:assert/strict';
+import { describe, expect, test } from 'bun:test';
 import { spawn } from 'node:child_process';
-import { describe, test } from 'node:test';
 
 /**
  * Helper function to run the app and capture output
  */
-async function runApp(args = ''): Promise<string> {
-    const cmd = args ? `bun src/cli/index.ts ${args}` : 'bun src/cli/index.ts';
+async function runApp(args = '') {
+    const cmd = args ? `bun apps/cli.template/index.ts ${args}` : 'bun apps/cli.template/index.ts';
 
-    return new Promise((resolve, reject) => {
+    return new Promise<string>((resolve, reject) => {
         const proc = spawn(cmd, { shell: true });
         let stdout = '';
         let stderr = '';
@@ -37,21 +36,19 @@ async function runApp(args = ''): Promise<string> {
 describe('CLI Integration Tests', () => {
     test('shows help when no command provided', async () => {
         const output = await runApp();
-        match(output, /USAGE/);
-        match(output, /COMMANDS/);
-        match(output, /mcp/);
+        expect(output).toMatch(/USAGE/);
+        expect(output).toMatch(/OPTIONS/);
     });
 
     test('shows help with --help flag', async () => {
         const output = await runApp('--help');
-        match(output, /USAGE/);
-        match(output, /COMMANDS/);
-        match(output, /mcp/);
+        expect(output).toMatch(/USAGE/);
+        expect(output).toMatch(/OPTIONS/);
     });
 
     test('shows error for unknown command', async () => {
         const output = await runApp('unknown');
-        match(output, /Unknown command: unknown/);
-        match(output, /Run with --help/);
+        expect(output).toMatch(/Unknown command: unknown/);
+        expect(output).toMatch(/Run 'bun apps\/cli --help' to see available commands/);
     });
 });

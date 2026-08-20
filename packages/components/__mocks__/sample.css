@@ -1,0 +1,5 @@
+/* sample stylesheet for transpile route tests */
+body {
+    color: red;
+    margin: 0;
+}

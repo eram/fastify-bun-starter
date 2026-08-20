@@ -1,71 +1,88 @@
-# Dockerfile for fastify-starter based on Wolfi OS with Bun
+# Dockerfile for fastify-bun-starter based on Chainguard Wolfi
+# Two phases: build (clone + test + source SBOM) -> final (runtime + shipped-tree SBOM + vuln scan)
 
-# ---- Base image ----
+# ---- Base image: tooling shared by build and final ----
 FROM cgr.dev/chainguard/wolfi-base:latest AS base
-WORKDIR /app
-RUN apk add --no-cache bun \
-  && adduser -D appuser \
-  && mkdir -p /app/node_modules \
-  && chown -R appuser:appuser /app
+RUN apk add --no-cache bun git syft grype cyclonedx-cli \
+  && adduser -D appuser
 
-
-# ---- Test stage (fails build if tests fail) ----
+# ---- Build stage: fresh clone, install, test, prune, source SBOM ----
+# WORKDIR matches the final stage (/app) so workspace symlinks in node_modules
+# (bun links @libs/*, @components/* etc. to packages/... by absolute path)
+# still resolve correctly after the COPY into `final` below.
+FROM base AS build
 ARG BUILD_TS
-FROM base AS test
+ARG GIT_REPO_URL=https://github.com/eram/fastify-bun-starter.git
+ARG GIT_COMMIT
 WORKDIR /app
-COPY package.json bun.lock* ./
-COPY . /app
-RUN mkdir -p /log && chown -R appuser:appuser /app /log
-USER appuser
-RUN bun install --frozen-lockfile
-# Run tests with Bun, add build timestamp to log, and fail build if tests fail
-RUN rm -f /log/test.log && echo "Build timestamp: $BUILD_TS" > /log/test.log && /bin/sh -c 'set -o pipefail && bun test 2>&1 | tee -a /log/test.log'
+RUN git clone "$GIT_REPO_URL" . \
+  && git checkout "$GIT_COMMIT"
 
-# ---- Production stage (only builds if tests pass) ----
-FROM base AS prod
+# SBOM of the raw cloned source, before install/build
+RUN mkdir -p /out \
+  && echo "Build timestamp: $BUILD_TS" \
+  && syft dir:/app --config /app/packages/config/syft.conf -o cyclonedx-json > /out/sbom-src.cdx.json
+
+RUN bun install --frozen-lockfile
+
+# Fails the build if lint, typecheck, tests, or coverage fail
+RUN bun run test:verbose
+
+# Prune to production deps only, then strip tests/mocks/dev-only dirs.
+# packages/libs/* and packages/components must stay: node_modules workspace
+# symlinks point at them by path. apps/cli.template is never imported by
+# apps/http.template, so it's safe to drop after install.
+RUN bun install --production --frozen-lockfile \
+  && find /app -type f \( -name '*.test.ts' -o -name '*.test.js' \) -delete \
+  && find /app -type d \( -name '__mock__' -o -name '__mocks__' \) -exec rm -rf {} + \
+  && rm -rf \
+    /app/.git \
+    /app/apps/cli.template \
+    /app/ci \
+    /app/docs \
+    /app/audits \
+    /app/coverage \
+    /app/scripts/bench_json_parse.ts \
+    /app/scripts/bench_logger.js \
+    /app/scripts/bench_zody.ts
+
+# ---- Final stage: minimal runtime, shipped-tree SBOM, vuln scan ----
+FROM base AS final
+ARG GIT_COMMIT
 WORKDIR /app
-COPY --from=test /app /app
+
+COPY --from=build --chown=appuser:appuser /app /app
+COPY --from=build /out/sbom-src.cdx.json /tmp/sbom-src.cdx.json
+
+# CycloneDX SBOM of the whole image filesystem at this point (OS packages + bun +
+# app), not just /app. --config excludes apk cache/tmp/scan-output scratch dirs
+# (see packages/config/syft.conf) so removed-package leftovers don't pollute it.
+# Note: since this runs before the cleanup step below, it still includes
+# syft/grype/cyclonedx-cli themselves as installed packages.
+RUN syft dir:/ --config /app/packages/config/syft.conf -o cyclonedx-json > /tmp/sbom-img.cdx.json
+
+# Merge sbom-src + sbom-img into one CycloneDX doc via cyclonedx-cli, and scan
+# the merged SBOM with grype — fails the build on high/critical, fixed vulns only.
+RUN mkdir -p /sbom /grype \
+  && cyclonedx-cli merge \
+    --input-files /tmp/sbom-src.cdx.json /tmp/sbom-img.cdx.json \
+    --output-format json \
+    --output-file "/sbom/fastify-bun-starter.sbom.${GIT_COMMIT}.json" \
+  && grype "sbom:/sbom/fastify-bun-starter.sbom.${GIT_COMMIT}.json" \
+    --fail-on high --only-fixed \
+    -o table | tee "/grype/fastify-bun-starter.grype.${GIT_COMMIT}.txt"
+
+# Remove scanning tools and temp files; keep the runtime minimal
+RUN apk del syft grype cyclonedx-cli \
+  && rm -rf /tmp/* /out /var/cache/apk/* /root/.cache \
+  && chmod -R a-w /app \
+  && mkdir -p /log && chown -R appuser:appuser /log /sbom /grype
+
+USER appuser:appuser
 ENV NODE_ENV=production
-RUN bun install --production --frozen-lockfile
-# Remove unnecessary files to minimize image size
-RUN rm -rf \
-  /app/src/**/*.test.* \
-  /app/ci/ \
-  /app/script/*test* \
-  /app/docs/ \
-  /app/*.cpuprofile \
-  /app/lcov.info \
-  /app/.vscode
-# Make /app readonly
-RUN chmod -R a-w /app
-USER appuser
-WORKDIR /app
 ENV PORT=3000
 ENV HOST=0.0.0.0
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD bun run -e "fetch('http://localhost:3000/health').then(r => r.json()).then(d => process.exit(d.status === 'ok' && d.workers >= 0 ? 0 : 1)).catch(() => process.exit(1))"
-CMD ["bun", "src/cluster.ts"]
-
-
-# ---- Vulnerability scan stage (does not produce final image) ----
-ARG BUILD_TS
-FROM cgr.dev/chainguard/wolfi-base:latest AS scan
-RUN apk add --no-cache curl
-# Install grype
-RUN curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
-# Copy the production image filesystem
-COPY --from=prod / /
-# Create /log and set permissions
-RUN mkdir -p /log && chown -R root:root /log && chmod 777 /log
-# Copy test log from test stage
-COPY --from=test /log/test.log /log/test.log
-# Run grype scan, add build timestamp to log, and fail on critical vulns
-RUN echo "Build timestamp: $BUILD_TS" > /log/grype-scan.log && grype dir:/ --fail-on critical --only-fixed --scope all-layers --verbose | tee -a /log/grype-scan.log
-
-# ---- Logs export stage (always export logs) ----
-FROM scratch AS logs
-COPY --from=scan /log/grype-scan.log /
-COPY --from=scan /log/test.log /
-
-# Note: The final image is always the prod stage. The scan stage is for validation only and is not used for deployment.
+CMD ["bun", "apps/http.template/cluster.ts"]

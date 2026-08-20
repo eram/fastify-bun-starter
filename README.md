@@ -66,7 +66,7 @@ bun run dev
 ### Developer Experience
 - **Bun All-in-One** - Runtime, package manager, test runner, bundler (no separate tools)
 - **Biome Linter** - Fast linting + formatting (no ESLint/Prettier needed)
-- **Native Tests** - Node.js `node:test` APIs, no Vitest/Jest (fast, no config)
+- **Native Tests** - Bun's `bun:test` framework, no Vitest/Jest (fast, no config)
 - **TypeScript Native** - No build step in dev, source maps work perfectly
 - **Claude-Optimized** - CLAUDE.md with full context for AI pair programming
 
@@ -136,10 +136,6 @@ npm run dev
 
 # Run cluster mode (production)
 npm run cluster
-
-# MCP management CLI
-npm run mcp list
-npm run mcp add my-server --transport sse --url https://example.com/sse
 
 # Run all tests (unit + integration)
 bun test
