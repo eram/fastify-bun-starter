@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
     array,
@@ -6,6 +6,8 @@ import {
     boolean,
     date,
     email,
+    enableCodeGen,
+    enumeration,
     isoDate,
     isoDatetime,
     isoDuration,
@@ -20,6 +22,7 @@ import {
     object,
     optional,
     parse,
+    safeParse,
     set,
     strictObject,
     string,
@@ -28,7 +31,6 @@ import {
     url,
     uuid,
     voidVal,
-    zod,
 } from './index';
 
 describe('Validator', () => {
@@ -800,7 +802,7 @@ describe('Validator', () => {
         // optional explicitly allows unknown keys (legacy behavior with Schema)
         const opt = optional({ name: string() });
         const optionalResult = opt.parse({ name: 'John', age: 30, anything: 'goes' });
-        expect(optionalResult?.name).toBe('John');
+        expect(optionalResult?.['name']).toBe('John');
     });
 
     test('should support Zod-compatible optional() for any validator', () => {
@@ -828,28 +830,40 @@ describe('Validator', () => {
     // Advanced features
     test('should allow custom validators and transformers via push()', () => {
         const n = number();
-        n.push((val: number) => {
-            if (val % 2 !== 0) throw new Error('Validation failed');
-            return val;
-        });
+        n.push(
+            (val: number) => {
+                if (val % 2 !== 0) throw new Error('Validation failed');
+                return val;
+            },
+            (_ctx, expr) => `(Number(${expr}) % 2 === 0)`,
+        );
         expect(n.parse(10)).toBe(10);
         expect(() => n.parse(11)).toThrow();
 
         const s = string();
-        s.push((val: string) => val.toUpperCase());
+        s.push(
+            (val: string) => val.toUpperCase(),
+            () => 'true',
+        );
         expect(s.parse('hello')).toBe('HELLO');
     });
 
     test('should allow multiple custom validators', () => {
         const n = number();
-        n.push((val: number) => {
-            if (val <= 0) throw new Error('Validation failed');
-            return val;
-        });
-        n.push((val: number) => {
-            if (val >= 100) throw new Error('Validation failed');
-            return val;
-        });
+        n.push(
+            (val: number) => {
+                if (val <= 0) throw new Error('Validation failed');
+                return val;
+            },
+            (ctx, expr) => `(Number(${expr}) > ${ctx.addConst(0)})`,
+        );
+        n.push(
+            (val: number) => {
+                if (val >= 100) throw new Error('Validation failed');
+                return val;
+            },
+            (ctx, expr) => `(Number(${expr}) < ${ctx.addConst(100)})`,
+        );
 
         expect(n.parse(50)).toBe(50);
         expect(() => n.parse(-5)).toThrow();
@@ -1048,7 +1062,7 @@ describe('Validator', () => {
         expect(schema.parse(input)).toEqual({ name: 'John' });
 
         // .passthrough() allows unknown keys
-        expect(schema.passthrough().parse(input)).toEqual({ name: 'John', age: 30 });
+        expect(schema.passthrough().parse(input)).toEqual({ name: 'John', age: 30 } as unknown as { name: string });
 
         // .strict() throws on unknown keys
         expect(() => schema.strict().parse(input)).toThrow(/Unknown keys in strict mode: age/);
@@ -1142,42 +1156,9 @@ describe('Validator', () => {
             expect(result4.error instanceof Error).toBeTruthy();
         }
     });
-
-    test('safeParse should return Zod-compatible result format', () => {
-        const schema = string().min(3);
-
-        // Success case
-        const result1 = zod.safeParse(schema, 'hello');
-        expect(result1.success).toBe(true);
-        if (result1.success) {
-            expect(result1.data).toBe('hello');
-        }
-
-        // Error case
-        const result2 = zod.safeParse(schema, 'ab');
-        expect(result2.success).toBe(false);
-        if (!result2.success) {
-            expect(result2.error instanceof Error).toBeTruthy();
-            expect(result2.error.message.includes('at least 3')).toBeTruthy();
-        }
-
-        // Test with object schema - must wrap with object()
-        const objSchema = object({ name: string(), age: number().int() });
-        const result3 = zod.safeParse(objSchema, { name: 'John', age: 30 });
-        expect(result3.success).toBe(true);
-        if (result3.success) {
-            expect(result3.data.name).toBe('John');
-            expect(result3.data.age).toBe(30);
-        }
-
-        // Test with invalid object
-        const result4 = zod.safeParse(objSchema, { name: 'Jane', age: 'invalid' });
-        expect(result4.success).toBe(false);
-        if (!result4.success) {
-            expect(result4.error instanceof Error).toBeTruthy();
-        }
-    });
 });
+
+// zod.safeParse / ZodError coverage lives in zod.test.ts (the zod-compat layer's own suite).
 
 test('should extend object schemas', () => {
     const baseSchema = object({ name: string(), age: number() });
@@ -1247,4 +1228,283 @@ test('should set and retrieve examples from validators', () => {
     expect(chainedDefs.examples).toStrictEqual(['hello', 'world']);
     expect(chainedDefs.minLength).toBe(3);
     expect(chainedDefs.maxLength).toBe(10);
+});
+
+describe('examples() method', () => {
+    test('examples() is chainable', () => {
+        const v = string().min(3).examples('hello', 'world').max(10).describe('A greeting');
+
+        const defs = v.defs();
+
+        expect(defs.minLength).toBe(3);
+        expect(defs.maxLength).toBe(10);
+        expect(defs.description).toBe('A greeting');
+        expect(defs.examples).toStrictEqual(['hello', 'world']);
+    });
+
+    test('examples() works with email v', () => {
+        const v = string().email().examples('admin@example.com', 'user@test.org');
+        const defs = v.defs();
+
+        expect(defs.format).toBe('email');
+        expect(defs.examples).toStrictEqual(['admin@example.com', 'user@test.org']);
+    });
+
+    test('examples() overrides previous examples', () => {
+        const v = string().examples('old1', 'old2').examples('new1', 'new2');
+
+        const defs = v.defs();
+        expect(defs.examples).toStrictEqual(['new1', 'new2']);
+    });
+
+    test('can use single example', () => {
+        const v = string().examples('single-example');
+        const defs = v.defs();
+
+        expect(defs.examples).toStrictEqual(['single-example']);
+    });
+
+    test('built-in validators have examples set automatically', () => {
+        const emailV = string().email();
+        const urlV = string().url();
+        const uuidV = string().uuid();
+
+        expect(emailV.defs().examples?.[0]).toBe('user@example.com');
+        expect(urlV.defs().examples?.[0]).toBe('https://example.com');
+        expect(uuidV.defs().examples?.[0]).toBe('123e4567-e89b-12d3-a456-426614174000');
+    });
+
+    test('custom examples override built-in examples', () => {
+        const v = string()
+            .email() // Sets examples: ['user@example.com']
+            .examples('custom@example.org'); // Overrides
+
+        const defs = v.defs();
+        expect(defs.examples).toStrictEqual(['custom@example.org']);
+    });
+});
+
+describe('email() and url() format field', () => {
+    test('email() sets format but not pattern', () => {
+        const defs = email().defs();
+        expect(defs.format).toBe('email');
+        expect(defs.pattern).toBeUndefined();
+    });
+
+    test('url() sets format but not pattern', () => {
+        const defs = url().defs();
+        expect(defs.format).toBe('uri');
+        expect(defs.pattern).toBeUndefined();
+    });
+});
+
+describe('codegen and self-replacing validate()', () => {
+    afterEach(() => {
+        enableCodeGen(true);
+    });
+
+    test('object().validate() agrees with safeParse across primitives, arrays, objects, unions nested under a schema root', () => {
+        const cases = [
+            {
+                schema: object({ n: number().gte(0).lte(100) }),
+                inputs: [{ n: 50 }, { n: -1 }, { n: 101 }, { n: 'x' }, {}, { n: undefined }],
+            },
+            {
+                schema: object({ arr: array(number().int()) }),
+                inputs: [{ arr: [1, 2, 3] }, { arr: [1, 2.5] }, { arr: ['a'] }, { arr: 'not an array' }],
+            },
+            {
+                schema: object({ name: string().min(1), age: number().gte(0) }),
+                inputs: [{ name: 'Alice', age: 25 }, { name: '', age: 25 }, { name: 'Alice', age: -1 }, { age: 25 }, {}],
+            },
+            {
+                schema: object({ u: union([string(), number()]) }),
+                inputs: [{ u: 'abc' }, { u: 42 }, { u: {} }, { u: null }],
+            },
+        ];
+
+        for (const { schema, inputs } of cases) {
+            for (const input of inputs) {
+                expect(schema.validate(input)).toBe(schema.safeParse(input).success);
+            }
+        }
+    });
+
+    test('object().validate() self-replaces on first call and keeps agreeing with safeParse after replacement', () => {
+        const schema = object({ name: string().min(1), age: number().gte(0) });
+        const before = schema.validate;
+
+        const first = schema.validate({ name: 'Alice', age: 25 });
+        const after = schema.validate;
+
+        expect(before).not.toBe(after);
+        expect(first).toBe(true);
+
+        const inputs = [{ name: 'Alice', age: 25 }, { name: '', age: 25 }, { name: 'Alice', age: -1 }, {}];
+        for (const input of inputs) {
+            expect(schema.validate(input)).toBe(schema.safeParse(input).success);
+        }
+        expect(schema.validate).toBe(after);
+    });
+
+    test('enableCodeGen(false) keeps validate() interpreted and never replaces it', () => {
+        enableCodeGen(false);
+        const schema = object({ name: string().min(1), age: number().gte(0) });
+        const before = schema.validate;
+
+        expect(schema.validate({ name: 'Alice', age: 25 })).toBe(true);
+        expect(schema.validate({ name: '', age: 25 })).toBe(false);
+        expect(schema.validate).toBe(before);
+    });
+
+    test('object with minProperties composes into validate() (does not silently drop the constraint)', () => {
+        const schema = object({ a: string() }).minProperties(1);
+
+        expect(schema.validate({ a: 'x' })).toBe(true);
+        expect(schema.validate({})).toBe(schema.safeParse({}).success);
+    });
+
+    test('strictObject rejects unknown keys through validate()', () => {
+        const schema = strictObject({ a: string() });
+
+        expect(schema.validate({ a: 'x', b: 1 })).toBe(false);
+        expect(schema.validate({ a: 'x' })).toBe(true);
+    });
+
+    test('codegen parity sweep: every constraint kind agrees with interpreted safeParse', () => {
+        // Exercises numeric comparisons, string length/format/regex, array/object/union
+        // nesting, and optional/default/nullable in one schema — proving codegen() is
+        // real for every validator kind involved, not silently falling back.
+        const schema = object({
+            id: number().int().gte(1).lte(1000),
+            code: string()
+                .min(2)
+                .max(10)
+                .regex(/^[a-z]+$/),
+            email: email(),
+            tags: array(string().min(1)).minLength(1).maxLength(5),
+            score: number().gte(0).optional(),
+            note: nullable(string()),
+            status: union([literal('open'), literal('closed')]),
+            count: number().default(0),
+        });
+
+        const validInput = {
+            id: 42,
+            code: 'abc',
+            email: 'user@example.com',
+            tags: ['x'],
+            note: null,
+            status: 'open',
+        };
+
+        const invalidInputs = [
+            { ...validInput, id: 0 },
+            { ...validInput, code: 'AB' },
+            { ...validInput, code: 'a' },
+            { ...validInput, email: 'not-an-email' },
+            { ...validInput, tags: [] },
+            { ...validInput, tags: ['', 'ok'] },
+            { ...validInput, score: -1 },
+            { ...validInput, status: 'archived' },
+            { ...validInput, note: 42 },
+        ];
+
+        expect(schema.validate(validInput)).toBe(schema.safeParse(validInput).success);
+        expect(schema.validate(validInput)).toBe(true);
+
+        for (const input of invalidInputs) {
+            expect(schema.validate(input)).toBe(schema.safeParse(input).success);
+        }
+    });
+
+    test('mutating a schema after validate() has compiled it throws instead of silently no-oping', () => {
+        const schema = object({ name: string().min(1) });
+        schema.validate({ name: 'Alice' });
+
+        expect(() => schema.minProperties(1)).toThrow(/after validate\(\) has compiled it/);
+        expect(() => schema.strict()).toThrow(/after validate\(\) has compiled it/);
+    });
+
+    test('mutating a nested field validator after the root schema has compiled it also throws', () => {
+        const nameField = string();
+        const schema = object({ name: nameField });
+        schema.validate({ name: 'Alice' });
+
+        expect(() => nameField.min(5)).toThrow(/after validate\(\) has compiled it/);
+    });
+
+    test('enableCodeGen(false) never locks the schema, since validate() stays interpreted', () => {
+        enableCodeGen(false);
+        const schema = object({ name: string() });
+        schema.validate({ name: 'Alice' });
+
+        expect(() => schema.minProperties(1)).not.toThrow();
+    });
+
+    test('shared singleton-style leaves (nullVal/undefinedVal/voidVal/nan) are independent per call, not aliased', () => {
+        const schemaA = object({ x: nullVal() });
+        const schemaB = object({ x: nullVal().optional() });
+
+        schemaA.validate({ x: null });
+        expect(() => schemaB.optional()).not.toThrow();
+        expect(schemaB.validate({})).toBe(true);
+    });
+
+    test('string().hash() and bigint().multipleOf() compose correctly through the compiled validate() path', () => {
+        const schema = object({
+            digest: string().hash('sha256'),
+            step: bigint().multipleOf(5n),
+        });
+
+        expect(schema.validate({ digest: 'a'.repeat(64), step: 10n })).toBe(true);
+        expect(schema.validate({ digest: 'a'.repeat(63), step: 10n })).toBe(false); // wrong length
+        expect(schema.validate({ digest: 'a'.repeat(64), step: 7n })).toBe(false); // not a multiple of 5
+    });
+
+    test('nullish() field compiles correctly through the compiled validate() path', () => {
+        const schema = object({ note: nullish(string().min(1)) });
+
+        expect(schema.validate({ note: 'hi' })).toBe(true);
+        expect(schema.validate({ note: null })).toBe(true);
+        expect(schema.validate({ note: undefined })).toBe(true);
+        expect(schema.validate({ note: '' })).toBe(false);
+    });
+
+    test('set() field (with and without an inner validator) compiles correctly through the compiled validate() path', () => {
+        const withInner = object({ tags: set(number()) });
+        expect(withInner.validate({ tags: new Set([1, 2]) })).toBe(true);
+        expect(withInner.validate({ tags: [1, 2] })).toBe(true);
+        expect(withInner.validate({ tags: 'nope' })).toBe(false);
+
+        const bare = object({ tags: set() });
+        expect(bare.validate({ tags: new Set(['a', 1]) })).toBe(true);
+        expect(bare.validate({ tags: 'nope' })).toBe(false);
+    });
+
+    test('map() field (with and without an inner validator) compiles correctly through the compiled validate() path', () => {
+        const withInner = object({ scores: map(number()) });
+        expect(withInner.validate({ scores: new Map([['a', 1]]) })).toBe(true);
+        expect(withInner.validate({ scores: { a: 1 } })).toBe(true);
+        expect(withInner.validate({ scores: 'nope' })).toBe(false);
+
+        const bare = object({ scores: map() });
+        expect(bare.validate({ scores: new Map([['a', 'x']]) })).toBe(true);
+        expect(bare.validate({ scores: { a: 'x' } })).toBe(true);
+        expect(bare.validate({ scores: 'nope' })).toBe(false);
+    });
+
+    test('enumeration().defs() includes the enum values alongside the union baseDef', () => {
+        const schema = enumeration(['red', 'green', 'blue']);
+        expect(schema.defs()).toMatchObject({ enum: ['red', 'green', 'blue'] });
+    });
+
+    test('standalone safeParse() returns a [data, error] tuple', () => {
+        const schema = number().gte(0);
+        expect(safeParse(schema, 5)).toEqual([5, undefined]);
+
+        const [data, err] = safeParse(schema, -1);
+        expect(data).toBeUndefined();
+        expect(err).toBeInstanceOf(Error);
+    });
 });

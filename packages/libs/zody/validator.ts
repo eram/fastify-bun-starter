@@ -1,72 +1,48 @@
 /**
- * Validator - Type-safe runtime validation and coercion library
+ * Core Validation Library — Functional validator implementations
  *
- * A high-performance validation library for TypeScript that provides runtime type checking,
- * coercion, and schema validation with a fluent API.
+ * Provides the functional validator API (string(), number(), object(), array(), etc.)
+ * plus the shared types, error classes, and format patterns used by both this module
+ * and the decorator system (zody.ts, which builds its schemas from these same nodes).
+ * First call compiles a fast path and replaces schema.validate with it.
  *
- * Features:
- * - Intentionally similar API to Zod v4
- * - Faster than Zod v4 for most cases: see bench_validators for performance comparison.
- * - Type coercion (automatic conversion where sensible).
- * - Chainable validation methods.
- * - Optional and default value support.
- * - Nested object and array validation.
- * - Built-in validators for common formats (email, URL, UUID, etc.)
- * - Literal type validation.
- * - Nullable and nullish wrappers.
- * - High performance with singleton instances and optimized paths.
+ * @example
+ * const schema = object({ name: string().min(3), age: number().gte(0) });
+ * schema.validate({ name: 'Alice', age: 25 });
  *
- * @example usage
- * ```typescript
- * // Chaining validators
- * const urlValidator = string().url().httpUrl();
- * const idValidator = string().uuid();
- * const priceValidator = number().positive().multipleOf(0.01);
- *
- * // Optional and default values
- * const statusValidator = string().default("pending");
- * const tagsValidator = array(string()).optional();
- *
- * // Object validators - wrap plain object schemas with object()
- * const userValidator = object({
- *   name: string().min(3),
- *   age: number().int().optional(),
- *   email: string().email()
- * });
- *
- * // Parse and validate
- * const user = userValidator.parse({
- *   name: "John",
- *   email: "john@example.com"
- * });
- *
- * // Nested object validators
- * const personValidator = object({
- *   name: string(),
- *   address: object({
- *     street: string(),
- *     city: string(),
- *     zip: string().regex(/^\d{5}$/, 'Invalid ZIP code')
- *   })
- * });
- * ```
  */
 
 import { ErrorEx } from '@libs/utils/error';
+import {
+    arrayOfCheck,
+    buildToFunction,
+    type CodegenCtx,
+    comparison,
+    isArrayCheck,
+    isCodeGenEnabled,
+    isFiniteCheck,
+    isIntegerCheck,
+    isPlainObjectCheck,
+    lengthCheck,
+    numberCoercible,
+    type ObjectShapeField,
+    objectShapeCheck,
+    regexTest,
+} from './codegen';
 
-// JSON Schema primitive types - defined locally to avoid circular dependency
-export type PrimitiveType = 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array' | 'null';
+//
+// --- Shared Types ---
+//
 
-// ValidatorDef contains only JSON Schema properties actually used
-// in this file. Additional props found in schema.ts
+// JSON Schema primitive types
+type PrimitiveType = 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array' | 'null';
+
+// Validator metadata for JSON schema conversion
 export interface ValidatorDef {
-    // Validator-specific metadata
     description?: string;
-    value?: unknown; // For literal values (maps to const in JSON Schema)
-    default?: unknown; // Default value for optional fields
-    examples?: string[]; // Example values for documentation and UI placeholders
-
-    // We track constraints as validators build up
+    value?: unknown;
+    default?: unknown;
+    examples?: string[];
     minimum?: number;
     maximum?: number;
     exclusiveMinimum?: number;
@@ -79,8 +55,6 @@ export interface ValidatorDef {
     maxItems?: number;
     minProperties?: number;
     maxProperties?: number;
-
-    // JSON Schema structure properties (used by validators)
     type?: PrimitiveType | PrimitiveType[];
     properties?: Record<string, ValidatorDef>;
     items?: ValidatorDef;
@@ -94,34 +68,84 @@ export interface ValidatorDef {
     additionalProperties?: boolean | ValidatorDef;
 }
 
+// Format Validation Patterns
+const PATTERNS = {
+    email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+    url: /^(https?|ftp):\/\/.+/i,
+    httpUrl: /^https?:\/\/.+/i,
+    uuid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    hostname: /^([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/,
+    ipv4: /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
+    ipv6: /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/,
+    jwt: /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/,
+    base64: /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/,
+    hex: /^[0-9a-fA-F]*$/,
+} as const;
+
 // SafeParse result types (Zod-compatible)
-export type SafeParseSuccess<T> = { success: true; data: T };
-export type SafeParseError = { success: false; error: Error };
+type SafeParseSuccess<T> = { success: true; data: T };
+type SafeParseError = { success: false; error: Error };
 export type SafeParseResult<T> = SafeParseSuccess<T> | SafeParseError;
 
+// Validator interface
 export interface Validator<T = unknown> {
     parse(value: unknown): T;
-    push(check: (arg: T) => T): number;
+    push(check: (arg: T) => T, gen: (ctx: CodegenCtx, expr: string) => string): number;
     clear(): void;
-    isOptional?: boolean; // Flag to indicate if validator is optional
+    isOptional?: boolean;
     describe(description: string): this;
-    examples(...examples: string[]): this; // Set example values for documentation
-    defs(props?: boolean): ValidatorDef; // Get Json schema definition
-    optional(): Validator<T | undefined>; // Make validator accept undefined
-    default(val: T): this; // Set default value for undefined/null inputs
-    safeParse(value: unknown): SafeParseResult<T>; // Zod-compatible safe parsing
+    examples(...examples: string[]): this;
+    defs(props?: boolean): ValidatorDef;
+    optional(): Validator<T | undefined>;
+    default(val: T): this;
+    safeParse(value: unknown): SafeParseResult<T>;
+    // Boolean validity check. Non-root nodes just wrap parse(); the schema root
+    // (ObjV) self-replaces this with a codegen'd fast path on first call.
+    validate(value: unknown): boolean;
+    // Emits a boolean JS expression testing `expr`, composed bottom-up by parent nodes.
+    codegen(ctx: CodegenCtx, expr: string): string;
+    // Freezes this validator (and any nested validators it owns) immutable — called
+    // once, recursively, by the schema root when it compiles a fast validate() path.
+    freeze(): void;
 }
 
-// Validator error class
-class ValidatorError extends ErrorEx {}
-const verror = (str: string) => new ValidatorError(str);
+//
+// --- Error Classes ---
+//
 
-// Abstract base class for all validators
+export class ValidatorError extends ErrorEx {}
+export const verror = (str: string) => new ValidatorError(str);
+
+//
+// --- Base Validator Class ---
+//
+
+type CheckEntry<T> = { check: (val: T) => T; gen: (ctx: CodegenCtx, expr: string) => string };
+
 export abstract class TypeV<T> implements Validator<T> {
-    protected _checks: Array<(val: T) => T> = [];
+    protected _entries: Array<CheckEntry<T>> = [];
     public isOptional = false; // Track if optional() was called (runtime flag for parse optimization)
     protected _inner?: Validator; // Optional inner validator for composite types
     protected _defs: Partial<ValidatorDef> = {}; // Track constraint metadata for schema generation
+
+    // Object.isFrozen(this) doubles as the "may this be mutated?" flag, so there's
+    // nothing to keep in sync — a mutation path that forgets to call
+    // _assertMutable() still fails, since _entries/_defs are frozen too.
+    protected _assertMutable(): void {
+        if (Object.isFrozen(this)) {
+            throw verror('Cannot modify a validator schema after validate() has compiled it');
+        }
+    }
+
+    /** Freezes this validator (and any nested validators it owns) immutable. Called once, by the schema root, on first validate(). */
+    freeze(): void {
+        // _defs is deliberately left unfrozen: it's JSON-Schema/description metadata,
+        // not consumed by parse()/codegen(), and several constraint methods (e.g.
+        // minProperties) write to it before calling push() — freezing it would make
+        // those throw a raw native error instead of _assertMutable()'s message.
+        Object.freeze(this._entries);
+        Object.freeze(this);
+    }
 
     defs(_props?: boolean): ValidatorDef {
         return { ...this._defs };
@@ -129,20 +153,19 @@ export abstract class TypeV<T> implements Validator<T> {
 
     parse(value: unknown): T {
         // Fast path for validators with no additional constraints
-        if (this._checks.length === 0) {
+        if (this._entries.length === 0) {
             return value as T;
         }
 
         // Fast path for single validator
-        if (this._checks.length === 1) {
-            const result = this._checks[0]!(value as T);
-            return result;
+        if (this._entries.length === 1) {
+            return this._entries[0]!.check(value as T);
         }
 
         // Multiple validators - apply in sequence
         let processed: T = value as T;
-        for (let i = 0; i < this._checks.length; i++) {
-            processed = this._checks[i]!(processed);
+        for (let i = 0; i < this._entries.length; i++) {
+            processed = this._entries[i]!.check(processed);
             // Short-circuit if optional validator returns undefined
             // (this prevents further coercion of undefined values)
             if (this.isOptional && processed === undefined && i === 0) {
@@ -152,33 +175,43 @@ export abstract class TypeV<T> implements Validator<T> {
         return processed;
     }
 
-    push(check: (val: T) => T): number {
-        return this._checks.push(check);
+    push(check: (val: T) => T, gen: (ctx: CodegenCtx, expr: string) => string): number {
+        this._assertMutable();
+        return this._entries.push({ check, gen });
     }
 
     clear() {
-        this._checks.length = 0;
+        this._assertMutable();
+        this._entries.length = 0;
     }
 
     optional(): TypeV<T | undefined> {
+        this._assertMutable();
         this.isOptional = true;
-        this._checks.splice(0, 0, (val: unknown) => {
-            if (val === undefined || val === null || val === '') {
-                return undefined as T;
-            }
-            return val as T;
+        this._entries.splice(0, 0, {
+            check: (val: unknown) => {
+                if (val === undefined || val === null || val === '') {
+                    return undefined as T;
+                }
+                return val as T;
+            },
+            gen: (_ctx, expr) => `(${expr} === undefined || ${expr} === null || ${expr} === '' || true)`,
         });
         return this as TypeV<T | undefined>;
     }
 
     default(val: T): this {
+        this._assertMutable();
         this.isOptional = true;
         this._defs.default = val;
-        this._checks.splice(0, 0, (v: unknown) => {
-            if (v === undefined || v === null) {
-                return val;
-            }
-            return v as T;
+        this._entries.splice(0, 0, {
+            check: (v: unknown) => {
+                if (v === undefined || v === null) {
+                    return val;
+                }
+                return v as T;
+            },
+            gen: () => 'true',
         });
         return this;
     }
@@ -202,6 +235,26 @@ export abstract class TypeV<T> implements Validator<T> {
             return { success: false, error: error as Error };
         }
     }
+
+    // Plain boolean validity check — wraps parse(). Only the schema root (ObjV)
+    // overrides this to self-replace with a codegen'd fast path.
+    validate(input: unknown): boolean {
+        try {
+            this.parse(input);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    // Default codegen: AND together every pushed entry's fragment, in push order —
+    // mirrors what parse() does with `_entries`. Container types (ObjV/ArrV/UnionV/
+    // NullableV/NullishV) override this to inline their structural checks and
+    // recurse into children's own codegen instead.
+    codegen(ctx: CodegenCtx, expr: string): string {
+        if (this._entries.length === 0) return 'true';
+        return `(${this._entries.map((entry) => `(${entry.gen(ctx, expr)})`).join(' && ')})`;
+    }
 }
 
 //
@@ -211,21 +264,24 @@ export abstract class TypeV<T> implements Validator<T> {
 class NumV extends TypeV<number> {
     constructor() {
         super();
-        this.push((val: unknown) => {
-            // Fast path: Value is already a number
-            if (typeof val === 'number') {
-                if (Number.isNaN(val)) {
-                    throw verror('Expected number, got NaN');
+        this.push(
+            (val: unknown) => {
+                // Fast path: Value is already a number
+                if (typeof val === 'number') {
+                    if (Number.isNaN(val)) {
+                        throw verror('Expected number, got NaN');
+                    }
+                    return val;
                 }
-                return val;
-            }
-            // Coerce to number
-            const num = Number(val);
-            if (Number.isNaN(num)) {
-                throw verror(`Expected number, got ${typeof val}`);
-            }
-            return num;
-        });
+                // Coerce to number
+                const num = Number(val);
+                if (Number.isNaN(num)) {
+                    throw verror(`Expected number, got ${typeof val}`);
+                }
+                return num;
+            },
+            (_ctx, expr) => numberCoercible(expr),
+        );
     }
 
     override defs(): ValidatorDef {
@@ -233,22 +289,28 @@ class NumV extends TypeV<number> {
     }
 
     int(): this {
-        this.push((val: number) => {
-            if (!Number.isInteger(val)) {
-                throw verror(`${val} is not integer`);
-            }
-            return val;
-        });
+        this.push(
+            (val: number) => {
+                if (!Number.isInteger(val)) {
+                    throw verror(`${val} is not integer`);
+                }
+                return val;
+            },
+            (_ctx, expr) => isIntegerCheck(expr),
+        );
         return this;
     }
 
     float(): this {
-        this.push((val: number) => {
-            if (!Number.isFinite(val)) {
-                throw verror(`${val} is not finite`);
-            }
-            return val;
-        });
+        this.push(
+            (val: number) => {
+                if (!Number.isFinite(val)) {
+                    throw verror(`${val} is not finite`);
+                }
+                return val;
+            },
+            (_ctx, expr) => isFiniteCheck(expr),
+        );
         return this;
     }
 
@@ -262,45 +324,57 @@ class NumV extends TypeV<number> {
 
     gte(min: number): this {
         this._defs.minimum = min;
-        this.push((val: number) => {
-            if (val < min) {
-                throw verror(`${val} >= ${min}`);
-            }
-            return val;
-        });
+        this.push(
+            (val: number) => {
+                if (val < min) {
+                    throw verror(`${val} >= ${min}`);
+                }
+                return val;
+            },
+            (ctx, expr) => comparison(ctx, expr, 'gte', min),
+        );
         return this;
     }
 
     lte(max: number): this {
         this._defs.maximum = max;
-        this.push((val: number) => {
-            if (val > max) {
-                throw verror(`${val} smaller than expected (${max})`);
-            }
-            return val;
-        });
+        this.push(
+            (val: number) => {
+                if (val > max) {
+                    throw verror(`${val} smaller than expected (${max})`);
+                }
+                return val;
+            },
+            (ctx, expr) => comparison(ctx, expr, 'lte', max),
+        );
         return this;
     }
 
     gt(value: number): this {
         this._defs.exclusiveMinimum = value;
-        this.push((val: number) => {
-            if (val <= value) {
-                throw verror(`${val} equal or larger than expected (${value})`);
-            }
-            return val;
-        });
+        this.push(
+            (val: number) => {
+                if (val <= value) {
+                    throw verror(`${val} equal or larger than expected (${value})`);
+                }
+                return val;
+            },
+            (ctx, expr) => comparison(ctx, expr, 'gt', value),
+        );
         return this;
     }
 
     lt(value: number): this {
         this._defs.exclusiveMaximum = value;
-        this.push((val: number) => {
-            if (val >= value) {
-                throw verror(`${val} equal or smaller than expected (${value})`);
-            }
-            return val;
-        });
+        this.push(
+            (val: number) => {
+                if (val >= value) {
+                    throw verror(`${val} equal or smaller than expected (${value})`);
+                }
+                return val;
+            },
+            (ctx, expr) => comparison(ctx, expr, 'lt', value),
+        );
         return this;
     }
 
@@ -322,12 +396,15 @@ class NumV extends TypeV<number> {
 
     multipleOf(divisor: number): this {
         this._defs.multipleOf = divisor;
-        this.push((val: number) => {
-            if (val % divisor !== 0) {
-                throw verror(`${val} undevided by ${divisor}`);
-            }
-            return val;
-        });
+        this.push(
+            (val: number) => {
+                if (val % divisor !== 0) {
+                    throw verror(`${val} undevided by ${divisor}`);
+                }
+                return val;
+            },
+            (ctx, expr) => `(Number(${expr}) % ${ctx.addConst(divisor)} === 0)`,
+        );
         return this;
     }
 
@@ -340,22 +417,28 @@ class NumV extends TypeV<number> {
     }
 
     finite(): this {
-        this.push((val: number) => {
-            if (!Number.isFinite(val)) {
-                throw verror(`${val} is not finite`);
-            }
-            return val;
-        });
+        this.push(
+            (val: number) => {
+                if (!Number.isFinite(val)) {
+                    throw verror(`${val} is not finite`);
+                }
+                return val;
+            },
+            (_ctx, expr) => isFiniteCheck(expr),
+        );
         return this;
     }
 
     safe(): this {
-        this.push((val: number) => {
-            if (!Number.isSafeInteger(val)) {
-                throw verror(`${val} is not a safe integer`);
-            }
-            return val;
-        });
+        this.push(
+            (val: number) => {
+                if (!Number.isSafeInteger(val)) {
+                    throw verror(`${val} is not a safe integer`);
+                }
+                return val;
+            },
+            (_ctx, expr) => `Number.isSafeInteger(Number(${expr}))`,
+        );
         return this;
     }
 }
@@ -367,14 +450,17 @@ class NumV extends TypeV<number> {
 export class StrV extends TypeV<string> {
     constructor() {
         super();
-        this.push((val: unknown) => {
-            // Fast path: Value is already a string
-            if (typeof val === 'string') {
-                return val;
-            }
-            // Coerce to string using native String() conversion
-            return String(val);
-        });
+        this.push(
+            (val: unknown) => {
+                // Fast path: Value is already a string
+                if (typeof val === 'string') {
+                    return val;
+                }
+                // Coerce to string using native String() conversion
+                return String(val);
+            },
+            () => 'true',
+        );
     }
 
     override defs(): ValidatorDef {
@@ -384,131 +470,173 @@ export class StrV extends TypeV<string> {
     // Validation methods
     min(min: number): this {
         this._defs.minLength = min;
-        this.push((val: string) => {
-            if (val.length < min) {
-                throw verror(`Must be at least ${min} characters long`);
-            }
-            return val;
-        });
+        this.push(
+            (val: string) => {
+                if (val.length < min) {
+                    throw verror(`Must be at least ${min} characters long`);
+                }
+                return val;
+            },
+            (ctx, expr) => lengthCheck(ctx, `String(${expr})`, 'min', min),
+        );
         return this;
     }
 
     max(max: number): this {
         this._defs.maxLength = max;
-        this.push((val: string) => {
-            if (val.length > max) {
-                throw verror(`Must be at most ${max} characters long`);
-            }
-            return val;
-        });
+        this.push(
+            (val: string) => {
+                if (val.length > max) {
+                    throw verror(`Must be at most ${max} characters long`);
+                }
+                return val;
+            },
+            (ctx, expr) => lengthCheck(ctx, `String(${expr})`, 'max', max),
+        );
         return this;
     }
 
     regex(pattern: RegExp, msg?: string): this {
         this._defs.pattern = pattern.source;
-        this.push((val: string) => {
-            if (!pattern.test(val)) {
-                val = val.length > 20 ? `${val.slice(0, 17)}...` : val;
-                let str = pattern.toString();
-                str = str.length > 20 ? `${str.slice(0, 17)}...` : str;
-                msg ??= `"${val}" does not match ${str}`;
-                // Support template string interpolation in error message
-                const message = msg.replace(/\$\{val\}/g, val);
-                throw verror(message);
-            }
-            return val;
-        });
+        this.push(
+            (val: string) => {
+                if (!pattern.test(val)) {
+                    val = val.length > 20 ? `${val.slice(0, 17)}...` : val;
+                    let str = pattern.toString();
+                    str = str.length > 20 ? `${str.slice(0, 17)}...` : str;
+                    msg ??= `"${val}" does not match ${str}`;
+                    // Support template string interpolation in error message
+                    const message = msg.replace(/\$\{val\}/g, val);
+                    throw verror(message);
+                }
+                return val;
+            },
+            (ctx, expr) => regexTest(ctx, `String(${expr})`, pattern),
+        );
         return this;
     }
 
     email(): this {
         this._defs.format = 'email';
         this._defs.examples = ['user@example.com'];
-        return this.regex(
-            /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-            // biome-ignore lint/suspicious/noTemplateCurlyInString: implemented inside regex func
-            '"${val}" is not a valid email address',
+        this.push(
+            (val: string) => {
+                if (!testFormat(val, 'email')) throw verror(`"${val}" is not a valid email address`);
+                return val;
+            },
+            (ctx, expr) => regexTest(ctx, `String(${expr})`, PATTERNS.email),
         );
+        return this;
     }
 
     length(len: number): this {
-        this.push((val: string) => {
-            if (val.length !== len) {
-                throw verror(`${val.length} === ${len}`);
-            }
-            return val;
-        });
+        this.push(
+            (val: string) => {
+                if (val.length !== len) {
+                    throw verror(`${val.length} === ${len}`);
+                }
+                return val;
+            },
+            (ctx, expr) => lengthCheck(ctx, `String(${expr})`, 'eq', len),
+        );
         return this;
     }
 
     startsWith(prefix: string): this {
-        this.push((val: string) => {
-            if (!val.startsWith(prefix)) {
-                throw verror(`"${val}" must start with "${prefix}"`);
-            }
-            return val;
-        });
+        this.push(
+            (val: string) => {
+                if (!val.startsWith(prefix)) {
+                    throw verror(`"${val}" must start with "${prefix}"`);
+                }
+                return val;
+            },
+            (ctx, expr) => `String(${expr}).startsWith(${ctx.addConst(prefix)})`,
+        );
         return this;
     }
 
     endsWith(suffix: string): this {
-        this.push((val: string) => {
-            if (!val.endsWith(suffix)) {
-                throw verror(`"${val}" must end with "${suffix}"`);
-            }
-            return val;
-        });
+        this.push(
+            (val: string) => {
+                if (!val.endsWith(suffix)) {
+                    throw verror(`"${val}" must end with "${suffix}"`);
+                }
+                return val;
+            },
+            (ctx, expr) => `String(${expr}).endsWith(${ctx.addConst(suffix)})`,
+        );
         return this;
     }
 
     includes(substring: string): this {
-        this.push((val: string) => {
-            if (!val.includes(substring)) {
-                throw verror(`"${val}" must include "${substring}"`);
-            }
-            return val;
-        });
+        this.push(
+            (val: string) => {
+                if (!val.includes(substring)) {
+                    throw verror(`"${val}" must include "${substring}"`);
+                }
+                return val;
+            },
+            (ctx, expr) => `String(${expr}).includes(${ctx.addConst(substring)})`,
+        );
         return this;
     }
 
     uppercase(): this {
-        this.push((val: string) => {
-            if (val !== val.toUpperCase()) {
-                throw verror(`"${val}" must be uppercase`);
-            }
-            return val;
-        });
+        this.push(
+            (val: string) => {
+                if (val !== val.toUpperCase()) {
+                    throw verror(`"${val}" must be uppercase`);
+                }
+                return val;
+            },
+            (_ctx, expr) => `(String(${expr}) === String(${expr}).toUpperCase())`,
+        );
         return this;
     }
 
     lowercase(): this {
-        this.push((val: string) => {
-            if (val !== val.toLowerCase()) {
-                throw verror(`"${val}" must be lowercase`);
-            }
-            return val;
-        });
+        this.push(
+            (val: string) => {
+                if (val !== val.toLowerCase()) {
+                    throw verror(`"${val}" must be lowercase`);
+                }
+                return val;
+            },
+            (_ctx, expr) => `(String(${expr}) === String(${expr}).toLowerCase())`,
+        );
         return this;
     }
 
-    // Transform methods
+    // Transform methods — mutate the parsed value but never fail validity.
     trim(): this {
-        this.push((val: string) => val.trim());
+        this.push(
+            (val: string) => val.trim(),
+            () => 'true',
+        );
         return this;
     }
 
     toLowerCase(): this {
-        this.push((val: string) => val.toLowerCase());
+        this.push(
+            (val: string) => val.toLowerCase(),
+            () => 'true',
+        );
         return this;
     }
 
     toUpperCase(): this {
-        this.push((val: string) => val.toUpperCase());
+        this.push(
+            (val: string) => val.toUpperCase(),
+            () => 'true',
+        );
         return this;
     }
 
     normalize(form: 'NFC' | 'NFD' | 'NFKC' | 'NFKD' = 'NFC'): this {
-        this.push((val: string) => val.normalize(form));
+        this.push(
+            (val: string) => val.normalize(form),
+            () => 'true',
+        );
         return this;
     }
 
@@ -516,50 +644,51 @@ export class StrV extends TypeV<string> {
     uuid(): this {
         this._defs.format = 'uuid';
         this._defs.examples = ['123e4567-e89b-12d3-a456-426614174000'];
-        return this.regex(
-            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-            // biome-ignore lint/suspicious/noTemplateCurlyInString: implemented inside regex func
-            '"${val}" is not a valid UUID',
+        this.push(
+            (val: string) => {
+                if (!testFormat(val, 'uuid')) throw verror(`"${val}" is not a valid UUID`);
+                return val;
+            },
+            (ctx, expr) => regexTest(ctx, `String(${expr})`, PATTERNS.uuid),
         );
+        return this;
     }
 
     url(): this {
         this._defs.format = 'uri';
         this._defs.examples = ['https://example.com'];
-        this.push((val: string) => {
-            try {
-                new URL(val);
+        this.push(
+            (val: string) => {
+                if (!testFormat(val, 'url')) throw verror(`"${val}" is not a valid URL`);
                 return val;
-            } catch {
-                throw verror(`"${val}" is not a valid URL`);
-            }
-        });
+            },
+            (ctx, expr) => regexTest(ctx, `String(${expr})`, PATTERNS.url),
+        );
         return this;
     }
 
     httpUrl(): this {
-        this.push((val: string) => {
-            try {
-                const url = new URL(val);
-                if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-                    throw verror(`"${val}" must use http or https protocol`);
-                }
+        this.push(
+            (val: string) => {
+                if (!testFormat(val, 'httpUrl')) throw verror(`"${val}" is not a valid HTTP(S) URL`);
                 return val;
-            } catch {
-                throw verror(`"${val}" is not a valid HTTP(S) URL`);
-            }
-        });
+            },
+            (ctx, expr) => regexTest(ctx, `String(${expr})`, PATTERNS.httpUrl),
+        );
         return this;
     }
 
     hostname(): this {
         this._defs.format = 'hostname';
         this._defs.examples = ['example.com', 'api.github.com'];
-        return this.regex(
-            /^([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/,
-            // biome-ignore lint/suspicious/noTemplateCurlyInString: implemented inside regex func
-            '"${val}" is not a valid hostname',
+        this.push(
+            (val: string) => {
+                if (!testFormat(val, 'hostname')) throw verror(`"${val}" is not a valid hostname`);
+                return val;
+            },
+            (ctx, expr) => regexTest(ctx, `String(${expr})`, PATTERNS.hostname),
         );
+        return this;
     }
 
     emoji(): this {
@@ -572,11 +701,14 @@ export class StrV extends TypeV<string> {
     }
 
     base64(): this {
-        return this.regex(
-            /^[A-Za-z0-9+/]*={0,2}$/,
-            // biome-ignore lint/suspicious/noTemplateCurlyInString: implemented inside regex func
-            '"${val}" is not valid base64',
+        this.push(
+            (val: string) => {
+                if (!testFormat(val, 'base64')) throw verror(`"${val}" is not valid base64`);
+                return val;
+            },
+            (ctx, expr) => regexTest(ctx, `String(${expr})`, PATTERNS.base64),
         );
+        return this;
     }
 
     base64url(): this {
@@ -588,19 +720,25 @@ export class StrV extends TypeV<string> {
     }
 
     hex(): this {
-        return this.regex(
-            /^[0-9a-fA-F]+$/,
-            // biome-ignore lint/suspicious/noTemplateCurlyInString: implemented inside regex func
-            '"${val}" is not valid hexadecimal',
+        this.push(
+            (val: string) => {
+                if (!testFormat(val, 'hex')) throw verror(`"${val}" is not valid hexadecimal`);
+                return val;
+            },
+            (ctx, expr) => regexTest(ctx, `String(${expr})`, PATTERNS.hex),
         );
+        return this;
     }
 
     jwt(): this {
-        return this.regex(
-            /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/,
-            // biome-ignore lint/suspicious/noTemplateCurlyInString: implemented inside regex func
-            '"${val}" is not a valid JWT token',
+        this.push(
+            (val: string) => {
+                if (!testFormat(val, 'jwt')) throw verror(`"${val}" is not a valid JWT token`);
+                return val;
+            },
+            (ctx, expr) => regexTest(ctx, `String(${expr})`, PATTERNS.jwt),
         );
+        return this;
     }
 
     nanoid(): this {
@@ -644,22 +782,27 @@ export class StrV extends TypeV<string> {
     ipv4(): this {
         this._defs.format = 'ipv4';
         this._defs.examples = ['192.168.1.1', '10.0.0.1'];
-        return this.regex(
-            /^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$/,
-            // biome-ignore lint/suspicious/noTemplateCurlyInString: implemented inside regex func
-            '"${val}" is not a valid IPv4 address',
+        this.push(
+            (val: string) => {
+                if (!testFormat(val, 'ipv4')) throw verror(`"${val}" is not a valid IPv4 address`);
+                return val;
+            },
+            (ctx, expr) => regexTest(ctx, `String(${expr})`, PATTERNS.ipv4),
         );
+        return this;
     }
 
     ipv6(): this {
         this._defs.format = 'ipv6';
         this._defs.examples = ['2001:0db8:85a3::8a2e:0370:7334', '::1'];
-        // IPv6 validation (supports compressed format)
-        return this.regex(
-            /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/,
-            // biome-ignore lint/suspicious/noTemplateCurlyInString: implemented inside regex func
-            '"${val}" is not a valid IPv6 address',
+        this.push(
+            (val: string) => {
+                if (!testFormat(val, 'ipv6')) throw verror(`"${val}" is not a valid IPv6 address`);
+                return val;
+            },
+            (ctx, expr) => regexTest(ctx, `String(${expr})`, PATTERNS.ipv6),
         );
+        return this;
     }
 
     cidrv4(): this {
@@ -688,15 +831,21 @@ export class StrV extends TypeV<string> {
             sha512: 128,
         };
         const expected = lengths[algorithm];
-        this.push((val: string) => {
-            if (!/^[0-9a-fA-F]+$/.test(val)) {
-                throw verror(`"${val}" is not a valid hex string`);
-            }
-            if (val.length !== expected) {
-                throw verror(`${algorithm} hash must be ${expected} characters, got ${val.length}`);
-            }
-            return val;
-        });
+        this.push(
+            (val: string) => {
+                if (!/^[0-9a-fA-F]+$/.test(val)) {
+                    throw verror(`"${val}" is not a valid hex string`);
+                }
+                if (val.length !== expected) {
+                    throw verror(`${algorithm} hash must be ${expected} characters, got ${val.length}`);
+                }
+                return val;
+            },
+            (ctx, expr) => {
+                const strExpr = `String(${expr})`;
+                return `(${regexTest(ctx, strExpr, /^[0-9a-fA-F]+$/)} && ${lengthCheck(ctx, strExpr, 'eq', expected!)})`;
+            },
+        );
         return this;
     }
 
@@ -756,9 +905,12 @@ class BoolV extends TypeV<boolean> {
         super();
         // Add type coercion as the first validator
         // Uses JavaScript's native Boolean() coercion (same as Zod)
-        this.push((val: unknown) => {
-            return Boolean(val);
-        });
+        this.push(
+            (val: unknown) => {
+                return Boolean(val);
+            },
+            () => 'true',
+        );
     }
 
     override defs(): ValidatorDef {
@@ -770,14 +922,21 @@ class BoolV extends TypeV<boolean> {
 // --- BigInt Validator ---
 //
 
+function bigintCoercibleCheck(expr: string): string {
+    return `(function () { try { BigInt(${expr}); return true; } catch { return false; } })()`;
+}
+
 class BigIntV extends TypeV<bigint> {
     constructor() {
         super();
         // Add type coercion as the first validator
-        this.push((val: unknown) => {
-            if (typeof val === 'bigint') return val;
-            return BigInt(val as string | number | boolean | bigint);
-        });
+        this.push(
+            (val: unknown) => {
+                if (typeof val === 'bigint') return val;
+                return BigInt(val as string | number | boolean | bigint);
+            },
+            (_ctx, expr) => bigintCoercibleCheck(expr),
+        );
     }
 
     override defs(): ValidatorDef {
@@ -786,45 +945,57 @@ class BigIntV extends TypeV<bigint> {
 
     gt(threshold: bigint): this {
         this._defs.exclusiveMinimum = Number(threshold);
-        this.push((val: bigint) => {
-            if (val <= threshold) {
-                throw verror(`${val} equal or smaller than expected (${threshold})`);
-            }
-            return val;
-        });
+        this.push(
+            (val: bigint) => {
+                if (val <= threshold) {
+                    throw verror(`${val} equal or smaller than expected (${threshold})`);
+                }
+                return val;
+            },
+            (ctx, expr) => comparison(ctx, expr, 'gt', threshold),
+        );
         return this;
     }
 
     gte(threshold: bigint): this {
         this._defs.minimum = Number(threshold);
-        this.push((val: bigint) => {
-            if (val < threshold) {
-                throw verror(`${val} smaller than expected (${threshold})`);
-            }
-            return val;
-        });
+        this.push(
+            (val: bigint) => {
+                if (val < threshold) {
+                    throw verror(`${val} smaller than expected (${threshold})`);
+                }
+                return val;
+            },
+            (ctx, expr) => comparison(ctx, expr, 'gte', threshold),
+        );
         return this;
     }
 
     lt(threshold: bigint): this {
         this._defs.exclusiveMaximum = Number(threshold);
-        this.push((val: bigint) => {
-            if (val >= threshold) {
-                throw verror(`${val} equal or larger than expected (${threshold})`);
-            }
-            return val;
-        });
+        this.push(
+            (val: bigint) => {
+                if (val >= threshold) {
+                    throw verror(`${val} equal or larger than expected (${threshold})`);
+                }
+                return val;
+            },
+            (ctx, expr) => comparison(ctx, expr, 'lt', threshold),
+        );
         return this;
     }
 
     lte(threshold: bigint): this {
         this._defs.maximum = Number(threshold);
-        this.push((val: bigint) => {
-            if (val > threshold) {
-                throw verror(`${val} larger than expected (${threshold})`);
-            }
-            return val;
-        });
+        this.push(
+            (val: bigint) => {
+                if (val > threshold) {
+                    throw verror(`${val} larger than expected (${threshold})`);
+                }
+                return val;
+            },
+            (ctx, expr) => comparison(ctx, expr, 'lte', threshold),
+        );
         return this;
     }
 
@@ -854,12 +1025,18 @@ class BigIntV extends TypeV<bigint> {
 
     multipleOf(divisor: bigint): this {
         this._defs.multipleOf = Number(divisor);
-        this.push((val: bigint) => {
-            if (val % divisor !== 0n) {
-                throw verror(`${val} undevided by ${divisor}`);
-            }
-            return val;
-        });
+        this.push(
+            (val: bigint) => {
+                if (val % divisor !== 0n) {
+                    throw verror(`${val} undevided by ${divisor}`);
+                }
+                return val;
+            },
+            (ctx, expr) => {
+                const divisorRef = ctx.addConst(divisor);
+                return `(function () { try { return BigInt(${expr}) % ${divisorRef} === 0n; } catch { return false; } })()`;
+            },
+        );
         return this;
     }
 
@@ -873,51 +1050,66 @@ class BigIntV extends TypeV<bigint> {
 // Date can be ISO string or timestamp number.
 //
 
+function dateCoercibleCheck(expr: string): string {
+    return `(function () {
+        var v = ${expr};
+        if (v instanceof Date) return true;
+        if (typeof v === 'string') { if (v === '') return false; var d = new Date(v); return !Number.isNaN(d.getTime()); }
+        if (typeof v === 'number') { if (!Number.isFinite(v) || v > 8640000000000000) return false; var d2 = new Date(v); return !Number.isNaN(d2.getTime()); }
+        if (typeof v === 'boolean') return true;
+        if (v === null) return true;
+        return false;
+    })()`;
+}
+
 class DateV extends TypeV<Date> {
     constructor() {
         super();
-        this.push((val: unknown) => {
-            // Direct Date instance
-            if (val instanceof Date) {
-                return val;
-            }
-
-            // String to Date
-            if (typeof val === 'string') {
-                if (val === '') {
-                    throw verror('Date string cannot be empty');
+        this.push(
+            (val: unknown) => {
+                // Direct Date instance
+                if (val instanceof Date) {
+                    return val;
                 }
-                const d = new Date(val);
-                if (!Number.isNaN(d.getTime())) {
-                    return d;
-                }
-                throw verror(`"${val}" is not a valid date`);
-            }
 
-            // Number to Date (timestamp)
-            if (typeof val === 'number') {
-                if (!Number.isFinite(val) || val > 8640000000000000) {
+                // String to Date
+                if (typeof val === 'string') {
+                    if (val === '') {
+                        throw verror('Date string cannot be empty');
+                    }
+                    const d = new Date(val);
+                    if (!Number.isNaN(d.getTime())) {
+                        return d;
+                    }
+                    throw verror(`"${val}" is not a valid date`);
+                }
+
+                // Number to Date (timestamp)
+                if (typeof val === 'number') {
+                    if (!Number.isFinite(val) || val > 8640000000000000) {
+                        throw verror(`${val} is not a valid timestamp`);
+                    }
+                    const d = new Date(val);
+                    if (!Number.isNaN(d.getTime())) {
+                        return d;
+                    }
                     throw verror(`${val} is not a valid timestamp`);
                 }
-                const d = new Date(val);
-                if (!Number.isNaN(d.getTime())) {
-                    return d;
+
+                // Boolean to Date (true→1ms, false→0ms)
+                if (typeof val === 'boolean') {
+                    return new Date(val ? 1 : 0);
                 }
-                throw verror(`${val} is not a valid timestamp`);
-            }
 
-            // Boolean to Date (true→1ms, false→0ms)
-            if (typeof val === 'boolean') {
-                return new Date(val ? 1 : 0);
-            }
+                // null to Date (epoch)
+                if (val === null) {
+                    return new Date(0);
+                }
 
-            // null to Date (epoch)
-            if (val === null) {
-                return new Date(0);
-            }
-
-            throw verror(`Expected date, got ${typeof val}`);
-        });
+                throw verror(`Expected date, got ${typeof val}`);
+            },
+            (_ctx, expr) => dateCoercibleCheck(expr),
+        );
     }
 
     override defs(): ValidatorDef {
@@ -937,14 +1129,17 @@ class LiteralV<T extends string | number | boolean | null | undefined> extends T
         this._literal = literal;
 
         // Add literal validation logic to checks
-        this.push((val: unknown) => {
-            if (val !== this._literal) {
-                const format = (v: unknown) =>
-                    v === null ? 'null' : v === undefined ? 'undefined' : typeof v === 'string' ? `"${v}"` : String(v);
-                throw verror(`Expected literal ${format(this._literal)}, got ${format(val)}`);
-            }
-            return this._literal;
-        });
+        this.push(
+            (val: unknown) => {
+                if (val !== this._literal) {
+                    const format = (v: unknown) =>
+                        v === null ? 'null' : v === undefined ? 'undefined' : typeof v === 'string' ? `"${v}"` : String(v);
+                    throw verror(`Expected literal ${format(this._literal)}, got ${format(val)}`);
+                }
+                return this._literal;
+            },
+            (ctx, expr) => (this._literal === undefined ? `${expr} === undefined` : `${expr} === ${ctx.addConst(this._literal)}`),
+        );
     }
 
     override defs(): ValidatorDef {
@@ -993,7 +1188,10 @@ class LiteralV<T extends string | number | boolean | null | undefined> extends T
 class UnknownV extends TypeV<unknown> {
     constructor() {
         super();
-        this.push((val: unknown) => val);
+        this.push(
+            (val: unknown) => val,
+            () => 'true',
+        );
     }
 }
 
@@ -1019,12 +1217,15 @@ class NanV extends TypeV<number> {
     constructor() {
         super();
         // NaN is special because NaN !== NaN, so we need custom logic
-        this.push((val: unknown) => {
-            if (!Number.isNaN(val)) {
-                throw verror(`Expected NaN, got ${val}`);
-            }
-            return val as number;
-        });
+        this.push(
+            (val: unknown) => {
+                if (!Number.isNaN(val)) {
+                    throw verror(`Expected NaN, got ${val}`);
+                }
+                return val as number;
+            },
+            (_ctx, expr) => `Number.isNaN(${expr})`,
+        );
     }
 
     override defs(): ValidatorDef {
@@ -1042,12 +1243,25 @@ class NullableV<T> extends TypeV<T | null> {
         this._inner = inner;
 
         // Add nullable validation logic to checks
-        this.push((value: unknown) => {
-            if (value === null) {
-                return null;
-            }
-            return this._inner!.parse(value) as T;
-        });
+        this.push(
+            (value: unknown) => {
+                if (value === null) {
+                    return null;
+                }
+                return this._inner!.parse(value) as T;
+            },
+            () => 'true', // unused: codegen() is overridden below
+        );
+    }
+
+    override codegen(ctx: CodegenCtx, expr: string): string {
+        const innerExpr = this._inner!.codegen(ctx, expr);
+        return `(${expr} === null || (${innerExpr}))`;
+    }
+
+    override freeze(): void {
+        super.freeze();
+        this._inner!.freeze();
     }
 
     override defs(props?: boolean): ValidatorDef {
@@ -1094,12 +1308,25 @@ class NullishV<T> extends TypeV<T | null | undefined> {
         this.isOptional = true;
 
         // Add nullish validation logic to checks
-        this.push((value: unknown) => {
-            if (value === null || value === undefined) {
-                return value as T | null | undefined;
-            }
-            return this._inner!.parse(value) as T | null | undefined;
-        });
+        this.push(
+            (value: unknown) => {
+                if (value === null || value === undefined) {
+                    return value as T | null | undefined;
+                }
+                return this._inner!.parse(value) as T | null | undefined;
+            },
+            () => 'true', // unused: codegen() is overridden below
+        );
+    }
+
+    override codegen(ctx: CodegenCtx, expr: string): string {
+        const innerExpr = this._inner!.codegen(ctx, expr);
+        return `(${expr} === null || ${expr} === undefined || (${innerExpr}))`;
+    }
+
+    override freeze(): void {
+        super.freeze();
+        this._inner!.freeze();
     }
 
     override defs(props?: boolean): ValidatorDef {
@@ -1170,70 +1397,73 @@ export class ObjV<S extends Record<string, Validator>> extends TypeV<InferObject
         this._schema = schema as S;
         // Add type coercion and validation in one validator
         type InferredType = InferObject<S>;
-        this.push((val: unknown) => {
-            if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
-                // If no schema, just return the object as-is
-                if (Object.keys(this._schema).length === 0) {
-                    return val as InferredType;
-                }
-
-                const rec = val as Record<string, unknown>;
-
-                // Strict mode: reject unknown keys
-                if (this._strict) {
-                    const schemaKeys = Object.keys(this._schema);
-                    const inputKeys = Object.keys(rec);
-                    const unknownKeys = inputKeys.filter((k) => !schemaKeys.includes(k));
-                    if (unknownKeys.length > 0) {
-                        throw verror(`Unknown keys in strict mode: ${unknownKeys.join(', ')}`);
-                    }
-                }
-
-                // Validate nested fields directly here - each validator's parse will throw if validation fails
-                const result: Record<string, unknown> = {};
-                for (const key of Object.keys(this._schema)) {
-                    const fieldValidator = this._schema[key];
-                    const fieldValue = rec[key];
-
-                    // Check if field is optional
-                    const isOptional =
-                        fieldValidator &&
-                        typeof fieldValidator === 'object' &&
-                        'isOptional' in fieldValidator &&
-                        fieldValidator.isOptional;
-
-                    // If field is missing and required, throw error
-                    if (fieldValue === undefined && !isOptional) {
-                        throw verror(`Missing required field: ${key}`);
+        this.push(
+            (val: unknown) => {
+                if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+                    // If no schema, just return the object as-is
+                    if (Object.keys(this._schema).length === 0) {
+                        return val as InferredType;
                     }
 
-                    // If field is present, validate it (even if undefined but optional)
-                    if (fieldValue !== undefined) {
-                        // Call the validator's parse method
-                        if (fieldValidator && typeof fieldValidator === 'object' && 'parse' in fieldValidator) {
-                            result[key] = (fieldValidator as Validator<unknown>).parse(fieldValue);
-                        } else {
-                            result[key] = fieldValue;
+                    const rec = val as Record<string, unknown>;
+
+                    // Strict mode: reject unknown keys
+                    if (this._strict) {
+                        const schemaKeys = Object.keys(this._schema);
+                        const inputKeys = Object.keys(rec);
+                        const unknownKeys = inputKeys.filter((k) => !schemaKeys.includes(k));
+                        if (unknownKeys.length > 0) {
+                            throw verror(`Unknown keys in strict mode: ${unknownKeys.join(', ')}`);
                         }
                     }
-                    // If field is undefined and optional, don't include it in result (or set to undefined)
-                    // This matches the expected behavior where optional fields can be omitted
-                }
 
-                // Passthrough mode: include unknown keys
-                if (this._loose) {
-                    const schemaKeys = Object.keys(this._schema);
-                    for (const key of Object.keys(rec)) {
-                        if (!schemaKeys.includes(key)) {
-                            result[key] = rec[key];
+                    // Validate nested fields directly here - each validator's parse will throw if validation fails
+                    const result: Record<string, unknown> = {};
+                    for (const key of Object.keys(this._schema)) {
+                        const fieldValidator = this._schema[key];
+                        const fieldValue = rec[key];
+
+                        // Check if field is optional
+                        const isOptional =
+                            fieldValidator &&
+                            typeof fieldValidator === 'object' &&
+                            'isOptional' in fieldValidator &&
+                            fieldValidator.isOptional;
+
+                        // If field is missing and required, throw error
+                        if (fieldValue === undefined && !isOptional) {
+                            throw verror(`Missing required field: ${key}`);
+                        }
+
+                        // If field is present, validate it (even if undefined but optional)
+                        if (fieldValue !== undefined) {
+                            // Call the validator's parse method
+                            if (fieldValidator && typeof fieldValidator === 'object' && 'parse' in fieldValidator) {
+                                result[key] = (fieldValidator as Validator<unknown>).parse(fieldValue);
+                            } else {
+                                result[key] = fieldValue;
+                            }
+                        }
+                        // If field is undefined and optional, don't include it in result (or set to undefined)
+                        // This matches the expected behavior where optional fields can be omitted
+                    }
+
+                    // Passthrough mode: include unknown keys
+                    if (this._loose) {
+                        const schemaKeys = Object.keys(this._schema);
+                        for (const key of Object.keys(rec)) {
+                            if (!schemaKeys.includes(key)) {
+                                result[key] = rec[key];
+                            }
                         }
                     }
-                }
 
-                return result as InferredType;
-            }
-            throw verror(`Expected object, got ${typeof val}`);
-        });
+                    return result as InferredType;
+                }
+                throw verror(`Expected object, got ${typeof val}`);
+            },
+            () => 'true', // unused: codegen() is overridden below
+        );
     }
 
     keyof(): UnionV<string> {
@@ -1246,18 +1476,21 @@ export class ObjV<S extends Record<string, Validator>> extends TypeV<InferObject
     }
 
     strict(): this {
+        this._assertMutable();
         this._strict = true;
         this._loose = false;
         return this;
     }
 
     passthrough(): this {
+        this._assertMutable();
         this._loose = true;
         this._strict = false;
         return this;
     }
 
     strip(): this {
+        this._assertMutable();
         this._strict = false;
         this._loose = false;
         return this;
@@ -1276,8 +1509,8 @@ export class ObjV<S extends Record<string, Validator>> extends TypeV<InferObject
 
         // Preserve validators from original instance (e.g., minProperties, maxProperties, custom refinements)
         // Skip the first validator which is the object type coercion/validation
-        for (let i = 1; i < this._checks.length; i++) {
-            extended._checks.push(this._checks[i] as never);
+        for (let i = 1; i < this._entries.length; i++) {
+            extended._entries.push(this._entries[i] as never);
         }
 
         extended._defs = { ...this._defs };
@@ -1290,27 +1523,44 @@ export class ObjV<S extends Record<string, Validator>> extends TypeV<InferObject
     minProperties(min: number): this {
         this._defs.minProperties = min;
         type InferredType = InferObject<S>;
-        this.push((val: InferredType) => {
-            const propCount = Object.keys(val as object).length;
-            if (propCount < min) {
-                throw verror(`Object must have at least ${min} properties, got ${propCount}`);
-            }
-            return val;
-        });
+        this.push(
+            (val: InferredType) => {
+                const propCount = Object.keys(val as object).length;
+                if (propCount < min) {
+                    throw verror(`Object must have at least ${min} properties, got ${propCount}`);
+                }
+                return val;
+            },
+            (ctx, expr) => this._propertyCountCheck(ctx, expr, 'min', min),
+        );
         return this;
     }
 
     maxProperties(max: number): this {
         this._defs.maxProperties = max;
         type InferredType = InferObject<S>;
-        this.push((val: InferredType) => {
-            const propCount = Object.keys(val as object).length;
-            if (propCount > max) {
-                throw verror(`Object must have at most ${max} properties, got ${propCount}`);
-            }
-            return val;
-        });
+        this.push(
+            (val: InferredType) => {
+                const propCount = Object.keys(val as object).length;
+                if (propCount > max) {
+                    throw verror(`Object must have at most ${max} properties, got ${propCount}`);
+                }
+                return val;
+            },
+            (ctx, expr) => this._propertyCountCheck(ctx, expr, 'max', max),
+        );
         return this;
+    }
+
+    // Counts only the schema-shape keys present on `expr` with a defined value —
+    // matches the parsed *result*'s key count in strip mode (the common case),
+    // which is what the interpreted minProperties/maxProperties checks above
+    // actually measure (they run against the reconstructed result, not raw input).
+    private _propertyCountCheck(ctx: CodegenCtx, expr: string, op: 'min' | 'max', value: number): string {
+        const keysConst = ctx.addConst(Object.keys(this._schema));
+        const countExpr = `${keysConst}.filter(function (k) { return ${expr}[k] !== undefined; }).length`;
+        const valueRef = ctx.addConst(value);
+        return `(${countExpr} ${op === 'min' ? '>=' : '<='} ${valueRef})`;
     }
 
     override defs(props = false): ValidatorDef {
@@ -1346,6 +1596,51 @@ export class ObjV<S extends Record<string, Validator>> extends TypeV<InferObject
     get schema(): Record<string, Validator> {
         return this._schema;
     }
+
+    override codegen(ctx: CodegenCtx, expr: string): string {
+        const strict = this._strict;
+        const schemaKeys = Object.keys(this._schema);
+        const fields: ObjectShapeField[] = schemaKeys.map((key) => {
+            const fieldValidator = this._schema[key] as Validator<unknown>;
+            return {
+                key,
+                optional: !!fieldValidator.isOptional,
+                codegen: (propExpr: string) => fieldValidator.codegen(ctx, propExpr),
+            };
+        });
+        let result = objectShapeCheck(ctx, expr, fields, strict ? schemaKeys : undefined);
+        // Extra checks pushed after the constructor (minProperties/maxProperties) —
+        // index 0 is the constructor's own placeholder, deliberately skipped.
+        const extra = this._entries.slice(1);
+        if (extra.length > 0) {
+            result = `(${result} && ${extra.map((entry) => `(${entry.gen(ctx, expr)})`).join(' && ')})`;
+        }
+        return result;
+    }
+
+    // Recurses into every field validator so mutating a nested schema after the
+    // root has compiled fails loudly instead of being silently invisible to the
+    // already-generated fast path.
+    override freeze(): void {
+        super.freeze();
+        for (const field of Object.values(this._schema)) {
+            field.freeze();
+        }
+    }
+
+    // Schema root: first call materializes a `new Function(...)`-backed validator
+    // from codegen() and replaces this instance's own `validate`. Nested validators
+    // never do this — only the root object schema does.
+    override validate(input: unknown): boolean {
+        if (!isCodeGenEnabled()) return super.validate(input);
+        const fast = buildToFunction(this);
+        // Must defineProperty before freeze(): freezing makes `this` non-extensible,
+        // and `validate` isn't an own property yet (it's inherited from the
+        // prototype) — adding it after freezing would throw.
+        Object.defineProperty(this, 'validate', { value: fast, writable: false, configurable: true });
+        this.freeze();
+        return fast(input);
+    }
 }
 
 //
@@ -1357,15 +1652,18 @@ export class ArrV<T = unknown> extends TypeV<T[]> {
         super();
         if (item !== undefined) this._inner = item;
         // Add type coercion as the first validator
-        this.push((val: unknown) => {
-            if (!Array.isArray(val)) {
-                throw verror(`Expected array, got ${typeof val}`);
-            }
-            if (this._inner) {
-                return val.map((item) => this._inner!.parse(item)) as T[];
-            }
-            return val as T[];
-        });
+        this.push(
+            (val: unknown) => {
+                if (!Array.isArray(val)) {
+                    throw verror(`Expected array, got ${typeof val}`);
+                }
+                if (this._inner) {
+                    return val.map((item) => this._inner!.parse(item)) as T[];
+                }
+                return val as T[];
+            },
+            () => 'true', // unused: codegen() is overridden below
+        );
     }
 
     override defs(props = false): ValidatorDef {
@@ -1381,44 +1679,72 @@ export class ArrV<T = unknown> extends TypeV<T[]> {
 
     minLength(min: number): this {
         this._defs.minItems = min;
-        this.push((val: T[]) => {
-            if (val.length < min) {
-                throw verror(`${val.length} >= ${min}`);
-            }
-            return val;
-        });
+        this.push(
+            (val: T[]) => {
+                if (val.length < min) {
+                    throw verror(`${val.length} >= ${min}`);
+                }
+                return val;
+            },
+            (ctx, expr) => lengthCheck(ctx, expr, 'min', min),
+        );
         return this;
     }
 
     maxLength(max: number): this {
         this._defs.maxItems = max;
-        this.push((val: T[]) => {
-            if (val.length > max) {
-                throw verror(`${val.length} <= ${max}`);
-            }
-            return val;
-        });
+        this.push(
+            (val: T[]) => {
+                if (val.length > max) {
+                    throw verror(`${val.length} <= ${max}`);
+                }
+                return val;
+            },
+            (ctx, expr) => lengthCheck(ctx, expr, 'max', max),
+        );
         return this;
     }
 
     length(len: number): this {
-        this.push((val: T[]) => {
-            if (val.length !== len) {
-                throw verror(`${val.length} === ${len}`);
-            }
-            return val;
-        });
+        this.push(
+            (val: T[]) => {
+                if (val.length !== len) {
+                    throw verror(`${val.length} === ${len}`);
+                }
+                return val;
+            },
+            (ctx, expr) => lengthCheck(ctx, expr, 'eq', len),
+        );
         return this;
     }
 
     nonempty(): this {
-        this.push((val: T[]) => {
-            if (val.length === 0) {
-                throw verror('Array must not be empty');
-            }
-            return val;
-        });
+        this.push(
+            (val: T[]) => {
+                if (val.length === 0) {
+                    throw verror('Array must not be empty');
+                }
+                return val;
+            },
+            (ctx, expr) => lengthCheck(ctx, expr, 'min', 1),
+        );
         return this;
+    }
+
+    override codegen(ctx: CodegenCtx, expr: string): string {
+        const inner = this._inner as Validator<unknown> | undefined;
+        let result = inner ? arrayOfCheck(ctx, expr, (itemExpr) => inner.codegen(ctx, itemExpr)) : isArrayCheck(expr);
+        // Extra checks pushed after the constructor (minLength/maxLength/length/nonempty).
+        const extra = this._entries.slice(1);
+        if (extra.length > 0) {
+            result = `(${result} && ${extra.map((entry) => `(${entry.gen(ctx, expr)})`).join(' && ')})`;
+        }
+        return result;
+    }
+
+    override freeze(): void {
+        super.freeze();
+        this._inner?.freeze();
     }
 }
 
@@ -1431,19 +1757,22 @@ class SetV<T = unknown> extends TypeV<Set<T>> {
         super();
         if (item !== undefined) this._inner = item;
         // Add type coercion as the first validator
-        this.push((val: unknown) => {
-            if (val instanceof Set) {
-                return val as Set<T>;
-            }
-            if (Array.isArray(val)) {
-                const set = new Set<T>();
-                for (const item of val) {
-                    set.add(this._inner ? (this._inner.parse(item) as T) : (item as T));
+        this.push(
+            (val: unknown) => {
+                if (val instanceof Set) {
+                    return val as Set<T>;
                 }
-                return set;
-            }
-            throw verror(`Expected Set or array, got ${typeof val}`);
-        });
+                if (Array.isArray(val)) {
+                    const set = new Set<T>();
+                    for (const item of val) {
+                        set.add(this._inner ? (this._inner.parse(item) as T) : (item as T));
+                    }
+                    return set;
+                }
+                throw verror(`Expected Set or array, got ${typeof val}`);
+            },
+            () => 'true', // unused: codegen() is overridden below
+        );
     }
 
     override defs(props = false): ValidatorDef {
@@ -1456,6 +1785,21 @@ class SetV<T = unknown> extends TypeV<Set<T>> {
 
         return { ...baseDef, ...schema };
     }
+
+    override codegen(ctx: CodegenCtx, expr: string): string {
+        const inner = this._inner as Validator<unknown> | undefined;
+        const itemsExpr = `Array.from(${expr})`;
+        const containerCheck = `(${expr} instanceof Set || Array.isArray(${expr}))`;
+        if (!inner) return containerCheck;
+        const itemVar = ctx.freshVar('item');
+        const innerExpr = inner.codegen(ctx, itemVar);
+        return `(${containerCheck} && ${itemsExpr}.every(function (${itemVar}) { return !!(${innerExpr}); }))`;
+    }
+
+    override freeze(): void {
+        super.freeze();
+        this._inner?.freeze();
+    }
 }
 
 //
@@ -1467,23 +1811,26 @@ class MapV<V = unknown> extends TypeV<Map<string, V>> {
         super();
         if (value !== undefined) this._inner = value;
         // Add type coercion as the first validator - converts to Map
-        this.push((val: unknown) => {
-            if (val instanceof Map) {
-                const result = new Map<string, V>();
-                for (const [k, v] of val.entries()) {
-                    result.set(k, (this._inner ? this._inner.parse(v) : v) as V);
+        this.push(
+            (val: unknown) => {
+                if (val instanceof Map) {
+                    const result = new Map<string, V>();
+                    for (const [k, v] of val.entries()) {
+                        result.set(k, (this._inner ? this._inner.parse(v) : v) as V);
+                    }
+                    return result;
                 }
-                return result;
-            }
-            if (val && typeof val === 'object' && !Array.isArray(val)) {
-                const result = new Map<string, V>();
-                for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
-                    result.set(k, (this._inner ? this._inner.parse(v) : v) as V);
+                if (val && typeof val === 'object' && !Array.isArray(val)) {
+                    const result = new Map<string, V>();
+                    for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+                        result.set(k, (this._inner ? this._inner.parse(v) : v) as V);
+                    }
+                    return result;
                 }
-                return result;
-            }
-            throw verror(`Expected Map or object, got ${typeof val}`);
-        });
+                throw verror(`Expected Map or object, got ${typeof val}`);
+            },
+            () => 'true', // unused: codegen() is overridden below
+        );
     }
 
     override defs(props = false): ValidatorDef {
@@ -1497,6 +1844,22 @@ class MapV<V = unknown> extends TypeV<Map<string, V>> {
         }
 
         return { ...baseDef, ...schema };
+    }
+
+    override codegen(ctx: CodegenCtx, expr: string): string {
+        const inner = this._inner as Validator<unknown> | undefined;
+        const mapCheck = `(${expr} instanceof Map)`;
+        const objCheck = isPlainObjectCheck(expr);
+        if (!inner) return `(${mapCheck} || ${objCheck})`;
+        const itemVar = ctx.freshVar('item');
+        const innerExpr = inner.codegen(ctx, itemVar);
+        const everyCheck = `function (${itemVar}) { return !!(${innerExpr}); }`;
+        return `((${mapCheck} && Array.from(${expr}.values()).every(${everyCheck})) || (${objCheck} && Object.values(${expr}).every(${everyCheck})))`;
+    }
+
+    override freeze(): void {
+        super.freeze();
+        this._inner?.freeze();
     }
 }
 
@@ -1515,23 +1878,26 @@ class UnionV<T> extends TypeV<T> {
         this._union = validators;
 
         // Add union validation logic to the checks array
-        this.push((value: unknown) => {
-            const errors: string[] = [];
+        this.push(
+            (value: unknown) => {
+                const errors: string[] = [];
 
-            // Try each validator in order (first-match strategy)
-            for (const validator of this._union) {
-                try {
-                    const result = validator.parse(value);
-                    return result as T;
-                } catch (err) {
-                    // Collect error message
-                    errors.push((err as Error).message);
+                // Try each validator in order (first-match strategy)
+                for (const validator of this._union) {
+                    try {
+                        const result = validator.parse(value);
+                        return result as T;
+                    } catch (err) {
+                        // Collect error message
+                        errors.push((err as Error).message);
+                    }
                 }
-            }
 
-            // All validators failed - throw with aggregate error
-            throw verror(`Value does not match any union member:\n${errors.map((e, i) => `  [${i}] ${e}`).join('\n')}`);
-        });
+                // All validators failed - throw with aggregate error
+                throw verror(`Value does not match any union member:\n${errors.map((e, i) => `  [${i}] ${e}`).join('\n')}`);
+            },
+            () => 'true', // unused: codegen() is overridden below
+        );
     }
 
     override defs(props = false): ValidatorDef {
@@ -1572,6 +1938,19 @@ class UnionV<T> extends TypeV<T> {
         const result = { ...baseDef, anyOf: anyOfSchemas };
         delete result.type;
         return result;
+    }
+
+    // Union: "matches at least one option" — boolean OR of each option's
+    // expression, e.g. `((a) || (b))`, not AND (which would mean "matches all
+    // options at once", intersection semantics this union does not have).
+    override codegen(ctx: CodegenCtx, expr: string): string {
+        const parts = this._union.map((option) => `(${option.codegen(ctx, expr)})`);
+        return `(${parts.join(' || ')})`;
+    }
+
+    override freeze(): void {
+        super.freeze();
+        for (const option of this._union) option.freeze();
     }
 }
 
@@ -1637,15 +2016,13 @@ export const object = <S extends Record<string, Validator>>(schema?: S) => new O
 export const record = <V = unknown>(value?: Validator<V>): Validator<Map<string, V>> => new MapV<V>(value);
 export const strictObject = <S extends Record<string, Validator>>(schema?: S) => new ObjV<S>(schema as S).strict();
 
-// Static singleton instances for stateless validators
-const NAN_VALIDATOR = new NanV();
-const NULL_VALIDATOR = new NullV();
-const UNDEFINED_VALIDATOR = new UndefinedV();
-const VOID_VALIDATOR = new VoidV();
-export const nan = () => NAN_VALIDATOR;
-export const nullVal = () => NULL_VALIDATOR;
-export const undefinedVal = () => UNDEFINED_VALIDATOR;
-export const voidVal = () => VOID_VALIDATOR;
+// A fresh instance per call, like every other factory here — a shared singleton
+// would let one schema's validate() freeze an instance embedded in an unrelated,
+// still-under-construction schema.
+export const nan = () => new NanV();
+export const nullVal = () => new NullV();
+export const undefinedVal = () => new UndefinedV();
+export const voidVal = () => new VoidV();
 
 // shorthands
 export const uuid = () => new StrV().uuid();
@@ -1671,6 +2048,13 @@ export const isoDate = () => new StrV().isoDate();
 export const isoTime = () => new StrV().isoTime();
 export const isoDatetime = () => new StrV().isoDatetime();
 export const isoDuration = () => new StrV().isoDuration();
+
+function testFormat(str: string, format: keyof typeof PATTERNS | RegExp): boolean {
+    if (typeof format === 'string') {
+        return PATTERNS[format as keyof typeof PATTERNS]?.test(str) ?? false;
+    }
+    return format.test(str);
+}
 
 // Helper to simplify extracted union types
 type ExtractTypes<T extends readonly Validator[]> =

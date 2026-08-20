@@ -7,6 +7,7 @@
  * @module jsonSchema
  */
 
+import { isIntegerCheck, lengthCheck, regexTest, typeofCheck } from './codegen';
 import type { Validator, ValidatorDef } from './validator';
 import * as v from './validator';
 import { ArrV, type ObjV } from './validator';
@@ -208,18 +209,18 @@ function parseSchema<T extends Record<string, Validator>>(schema: Schema<T> | Re
 
     // Start with properties from the validator defs if available
     const result = (schemaDef ? { ...schemaDef } : { type: 'object' }) as Record<string, unknown>;
-    result.properties = {};
-    result.required = [];
+    result['properties'] = {};
+    result['required'] = [];
 
     for (const [key, propValidator] of Object.entries(schemaProps)) {
         const savedPath = refs.currentPath;
         refs.currentPath = [...savedPath, 'properties', key];
 
-        (result.properties as Record<string, JsonSchema>)[key] = parseValidator(propValidator, refs);
+        (result['properties'] as Record<string, JsonSchema>)[key] = parseValidator(propValidator, refs);
 
         // Check if optional
         if (!propValidator.isOptional) {
-            (result.required as string[]).push(key);
+            (result['required'] as string[]).push(key);
         }
 
         refs.currentPath = savedPath;
@@ -228,7 +229,7 @@ function parseSchema<T extends Record<string, Validator>>(schema: Schema<T> | Re
     // Keep required array even if empty (JSON Schema spec allows it)
 
     // Set additionalProperties based on context
-    result.additionalProperties = refs.options.additionalProperties;
+    result['additionalProperties'] = refs.options.additionalProperties;
 
     return result as JsonSchema;
 }
@@ -533,38 +534,52 @@ function parseStringSchema(schema: JsonSchema): Validator {
     validator.clear();
 
     // Add strict type check (no coercion)
-    validator.push((val: unknown) => {
-        if (typeof val !== 'string') {
-            throw new Error(`Expected string, got ${typeof val}`);
-        }
-        return val as string;
-    });
+    validator.push(
+        (val: unknown) => {
+            if (typeof val !== 'string') {
+                throw new Error(`Expected string, got ${typeof val}`);
+            }
+            return val as string;
+        },
+        (_ctx, expr) => typeofCheck(expr, 'string'),
+    );
 
     // String constraints
     if (schema.minLength !== undefined) {
-        validator.push((val: string) => {
-            if (val.length < schema.minLength!) {
-                throw new Error(`String length ${val.length} is less than minimum ${schema.minLength}`);
-            }
-            return val;
-        });
+        const min = schema.minLength;
+        validator.push(
+            (val: string) => {
+                if (val.length < min) {
+                    throw new Error(`String length ${val.length} is less than minimum ${min}`);
+                }
+                return val;
+            },
+            (ctx, expr) => lengthCheck(ctx, expr, 'min', min),
+        );
     }
     if (schema.maxLength !== undefined) {
-        validator.push((val: string) => {
-            if (val.length > schema.maxLength!) {
-                throw new Error(`String length ${val.length} exceeds maximum ${schema.maxLength}`);
-            }
-            return val;
-        });
+        const max = schema.maxLength;
+        validator.push(
+            (val: string) => {
+                if (val.length > max) {
+                    throw new Error(`String length ${val.length} exceeds maximum ${max}`);
+                }
+                return val;
+            },
+            (ctx, expr) => lengthCheck(ctx, expr, 'max', max),
+        );
     }
     if (schema.pattern) {
         const pattern = new RegExp(schema.pattern);
-        validator.push((val: string) => {
-            if (!pattern.test(val)) {
-                throw new Error(`String does not match pattern ${schema.pattern}`);
-            }
-            return val;
-        });
+        validator.push(
+            (val: string) => {
+                if (!pattern.test(val)) {
+                    throw new Error(`String does not match pattern ${schema.pattern}`);
+                }
+                return val;
+            },
+            (ctx, expr) => regexTest(ctx, expr, pattern),
+        );
     }
 
     // String formats (basic support)
@@ -605,21 +620,27 @@ function parseNumberSchema(schema: JsonSchema): Validator {
     validator.clear();
 
     // Add strict type check (no coercion)
-    validator.push((val: unknown) => {
-        if (typeof val !== 'number') {
-            throw new Error(`Expected number, got ${typeof val}`);
-        }
-        return val as number;
-    });
+    validator.push(
+        (val: unknown) => {
+            if (typeof val !== 'number') {
+                throw new Error(`Expected number, got ${typeof val}`);
+            }
+            return val as number;
+        },
+        (_ctx, expr) => `typeof ${expr} === 'number'`,
+    );
 
     // Integer constraint
     if (schema.type === 'integer') {
-        validator.push((val: number) => {
-            if (!Number.isInteger(val)) {
-                throw new Error(`Expected integer, got ${val}`);
-            }
-            return val;
-        });
+        validator.push(
+            (val: number) => {
+                if (!Number.isInteger(val)) {
+                    throw new Error(`Expected integer, got ${val}`);
+                }
+                return val;
+            },
+            (_ctx, expr) => isIntegerCheck(expr),
+        );
     }
 
     // Number constraints
@@ -628,7 +649,7 @@ function parseNumberSchema(schema: JsonSchema): Validator {
 
     if (schema.minimum !== undefined) {
         // Check if we have Draft 4 style exclusiveMinimum as boolean
-        const hasExclusiveBooleanMin = (schema as unknown as Record<string, unknown>).exclusiveMinimum === true;
+        const hasExclusiveBooleanMin = (schema as unknown as Record<string, unknown>)['exclusiveMinimum'] === true;
         if (hasExclusiveBooleanMin) {
             // Draft 4 style: minimum with exclusiveMinimum: true
             validator = validator.gt(schema.minimum);
@@ -639,7 +660,7 @@ function parseNumberSchema(schema: JsonSchema): Validator {
 
     if (schema.maximum !== undefined) {
         // Check if we have Draft 4 style exclusiveMaximum as boolean
-        const hasExclusiveBooleanMax = (schema as unknown as Record<string, unknown>).exclusiveMaximum === true;
+        const hasExclusiveBooleanMax = (schema as unknown as Record<string, unknown>)['exclusiveMaximum'] === true;
         if (hasExclusiveBooleanMax) {
             // Draft 4 style: maximum with exclusiveMaximum: true
             validator = validator.lt(schema.maximum);

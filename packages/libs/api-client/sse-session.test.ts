@@ -6,7 +6,10 @@ import { sleep } from '@libs/utils/time';
 import { SSESession } from './sse-session';
 
 // Type-safe globalThis for spyOn calls
-const getGlobalScope = (): typeof globalThis => globalThis as unknown as typeof globalThis;
+// fetch is typed with a required `preconnect` static, which real mock functions never implement;
+// narrow the perceived type to a plain callable so mockImplementation accepts our test fetches.
+type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+const getGlobalScope = (): { fetch: FetchLike } => globalThis as unknown as { fetch: FetchLike };
 
 describe('SSESession', () => {
     test('should parse sessionId from endpoint event', async () => {

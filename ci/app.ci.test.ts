@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
  * Helper function to run the app and capture output
  */
 async function runApp(args = '') {
-    const cmd = args ? `bun apps/cli/index.ts ${args}` : 'bun apps/cli/index.ts';
+    const cmd = args ? `bun apps/cli.template/index.ts ${args}` : 'bun apps/cli.template/index.ts';
 
     return new Promise<string>((resolve, reject) => {
         const proc = spawn(cmd, { shell: true });
@@ -49,6 +49,6 @@ describe('CLI Integration Tests', () => {
     test('shows error for unknown command', async () => {
         const output = await runApp('unknown');
         expect(output).toMatch(/Unknown command: unknown/);
-        expect(output).toMatch(/Run with --help/);
+        expect(output).toMatch(/Run 'bun apps\/cli --help' to see available commands/);
     });
 });

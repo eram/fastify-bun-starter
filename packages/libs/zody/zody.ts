@@ -1,48 +1,65 @@
-// Import ErrorEx for ZodyError
+/* istanbul ignore file */
+/*
+ * Coverage is disabled for this file because Bun's coverage instrumentation
+ * misreports it, not because it is untested.
+ *
+ * Bun 1.3.14 attributes hit counts for this module almost entirely to its tail:
+ * 75 of 82 functions register as covered while only 12 of 805 lines do, the
+ * ErrorEx import below is recorded as never executed, and one line that runs
+ * once is credited with 84 hits. LF ("lines found", a static property of a
+ * file) is even reported as 805 under zody.test.ts but 569 under a trivial
+ * import-only test.
+ *
+ * Trigger is `class X extends <expression>` — see `class ZodyClass extends
+ * (target as unknown as ...)` inside Schema() below. Minimal repro: a file
+ * containing `class Derived extends Base()` reports DA:1,0 for its import line,
+ * while an otherwise identical file with a plain class reports DA:1,6.
+ * Decorators are not involved — a decorated class without an extends-expression
+ * measures correctly.
+ *
+ * Upstream: https://github.com/oven-sh/bun/issues/29691
+ * Fix:      https://github.com/oven-sh/bun/pull/38282 (open, unmerged as of
+ *           2026-08-14; also fixes "inverted byte ranges marked entire files as
+ *           executed", which likely explains the 793 zeroed lines here)
+ *
+ * REMOVE this ignore once that PR ships in a Bun release we run.
+ */
+/**
+ * Decorator-Based Validator System
+ *
+ * Provides TypeScript decorators (@z.string, @z.number, etc.) for class-based validation.
+ * Classes decorated with @z.Schema() get automatic validation via .validate() and .toZod().
+ * Field validators are built from validator.ts's nodes (string()/number()/object()/...) —
+ * this module has no validation logic of its own, only decorator metadata collection and
+ * translation into that shared node tree.
+ *
+ * @example
+ * @z.Schema({ autocompile: true })
+ * class User {
+ *   @z.string.minLength(3) name!: string;
+ *   @z.number.gte(0) age!: number;
+ * }
+ * User.validate({ name: 'Alice', age: 25 }); // First call compiles a fast codegen'd
+ *                                             // path and replaces itself with it.
+ */
+
 import { ErrorEx } from '@libs/utils/error';
+import type { Validator } from './validator';
+import * as v from './validator';
 
-// Compiled validator node for fast execution
-type CompiledNode<T = unknown> = {
-    validate(input: unknown): boolean;
-    parse(input: unknown): T;
-};
+export class ZodyError extends ErrorEx {
+    constructor(message: string) {
+        super(message);
+        this.name = 'ZodyError';
+    }
+}
 
-// Local Validator type - zody is self-contained with no external dependencies
-type Validator<T = unknown> = {
-    parse(input: unknown): T;
-    safeParse(input: unknown): { success: boolean; data?: T; error?: Error };
-    compile?(): CompiledNode<T>;
-    optional(): Validator<T | undefined>;
-    nullable(): Validator<T | null>;
-    default(value: T): Validator<T>;
-    min(value: number | bigint): Validator<T>;
-    max(value: number | bigint): Validator<T>;
-    gte(value: number | bigint): Validator<T>;
-    lte(value: number | bigint): Validator<T>;
-    gt(value: number | bigint): Validator<T>;
-    lt(value: number | bigint): Validator<T>;
-    email(): Validator<T>;
-    int(): Validator<T>;
-    float(): Validator<T>;
-    url(): Validator<T>;
-    uuid(): Validator<T>;
-    hostname(): Validator<T>;
-    ipv4(): Validator<T>;
-    ipv6(): Validator<T>;
-    jwt(): Validator<T>;
-    base64(): Validator<T>;
-    hex(): Validator<T>;
-    regex(pattern: RegExp | string, message?: string): Validator<T>;
-    trim(): Validator<T>;
-    toLowerCase(): Validator<T>;
-    toUpperCase(): Validator<T>;
-    minLength(len: number): Validator<T>;
-    maxLength(len: number): Validator<T>;
-    length(len: number): Validator<T>;
-    describe(text: string): Validator<T>;
-    // biome-ignore lint/suspicious/noExplicitAny: TypeScript index signatures require any, no unknown alternative
-    [key: string]: any;
-};
+// Loosely-typed view used only for dynamically dispatching decorator ops onto the
+// concrete validator.ts subclass instance (NumV/StrV/BigIntV/ArrV/...) built for a
+// field's root type — each subclass exposes a different, non-overlapping method set,
+// and there is no shared typed interface across all of them worth declaring here.
+// biome-ignore lint/suspicious/noExplicitAny: dynamic dispatch across validator.ts subclasses with no shared method surface
+type DynSchema = Validator<unknown> & Record<string, (...args: any[]) => Validator<unknown>>;
 
 type Ctor<T = unknown> = abstract new (...args: unknown[]) => T;
 type PrimitiveKind = 'string' | 'number' | 'boolean' | 'bigint' | 'date';
@@ -51,7 +68,6 @@ type RootKind = PrimitiveKind | 'array' | 'union' | 'literal' | 'enum' | 'object
 const META_KEY = '__z_meta__';
 const CACHE = Symbol.for('zody.cache');
 const PHANTOM = Symbol.for('zody.phantom');
-const _PENDING_FIELDS_KEY = Symbol.for('zody.pending_fields');
 
 // Global registry for field decorator info, keyed by class constructor
 const decorationRegistry = new WeakMap<object, Map<string, Op[]>>();
@@ -78,460 +94,6 @@ function registerFieldDecoration(fieldName: string, ops: Op[]): void {
 function getFieldDecorations(ctor: object): Map<string, Op[]> | undefined {
     return decorationRegistry.get(ctor);
 }
-
-// ZodyError class for validation failures
-class ZodyError extends ErrorEx {
-    constructor(message: string) {
-        super(message);
-        this.name = 'ZodyError';
-    }
-}
-
-// Regex patterns for format validation (ported from validator.ts)
-const PATTERNS = {
-    url: /^(https?|ftp):\/\/.+/i,
-    httpUrl: /^https?:\/\/.+/i,
-    uuid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-    hostname: /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/,
-    ipv4: /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/,
-    ipv6: /^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/,
-    jwt: /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/,
-    base64: /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/,
-    hex: /^[0-9a-fA-F]*$/,
-};
-
-function testFormat(str: string, format: keyof typeof PATTERNS | RegExp): boolean {
-    if (typeof format === 'string') {
-        return PATTERNS[format as keyof typeof PATTERNS]?.test(str) ?? false;
-    }
-    return format.test(str);
-}
-
-// Local validator factory functions - no external dependencies
-function createValidator<T>(
-    typeName: string,
-    parseFn: (input: unknown) => T,
-    options: {
-        optional?: boolean;
-        default?: T;
-        min?: number | bigint;
-        max?: number | bigint;
-        gt?: number | bigint;
-        lt?: number | bigint;
-        gte?: number | bigint;
-        lte?: number | bigint;
-        email?: boolean;
-        int?: boolean;
-        float?: boolean;
-        url?: boolean;
-        uuid?: boolean;
-        hostname?: boolean;
-        ipv4?: boolean;
-        ipv6?: boolean;
-        jwt?: boolean;
-        base64?: boolean;
-        hex?: boolean;
-        regex?: { pattern: RegExp | string; message?: string };
-        trim?: boolean;
-        toLowerCase?: boolean;
-        toUpperCase?: boolean;
-        minLength?: number;
-        maxLength?: number;
-        length?: number;
-        describe?: string;
-    } = {},
-): Validator<T> {
-    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: validation logic necessarily complex
-    const parse = (input: unknown): T => {
-        // During class initialization, be lenient with undefined values
-        const isInitializing = (globalThis as unknown).__z_initializing__;
-        if (isInitializing && input === undefined) return undefined as T;
-
-        if (options.optional && input === undefined) return undefined as T;
-        if (options.default !== undefined && input === undefined) return options.default;
-        if (input === null && !options.optional) throw new ZodyError(`Expected ${typeName}, received null`);
-
-        let result = parseFn(input);
-
-        // String transforms (apply before length checks)
-        if (typeof result === 'string') {
-            if (options.trim) result = (result as unknown).trim();
-            if (options.toLowerCase) result = (result as unknown).toLowerCase();
-            if (options.toUpperCase) result = (result as unknown).toUpperCase();
-        }
-
-        // Format validations for strings
-        if (typeof result === 'string') {
-            if (options.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result)) {
-                throw new ZodyError(`Expected valid email, received ${result}`);
-            }
-            if (options.url && !testFormat(result, 'url')) {
-                throw new ZodyError(`Expected valid URL, received ${result}`);
-            }
-            if (options.uuid && !testFormat(result, 'uuid')) {
-                throw new ZodyError(`Expected valid UUID, received ${result}`);
-            }
-            if (options.hostname && !testFormat(result, 'hostname')) {
-                throw new ZodyError(`Expected valid hostname, received ${result}`);
-            }
-            if (options.ipv4 && !testFormat(result, 'ipv4')) {
-                throw new ZodyError(`Expected valid IPv4, received ${result}`);
-            }
-            if (options.ipv6 && !testFormat(result, 'ipv6')) {
-                throw new ZodyError(`Expected valid IPv6, received ${result}`);
-            }
-            if (options.jwt && !testFormat(result, 'jwt')) {
-                throw new ZodyError(`Expected valid JWT, received ${result}`);
-            }
-            if (options.base64 && !testFormat(result, 'base64')) {
-                throw new ZodyError(`Expected valid base64, received ${result}`);
-            }
-            if (options.hex && !testFormat(result, 'hex')) {
-                throw new ZodyError(`Expected valid hex, received ${result}`);
-            }
-            if (options.regex) {
-                const pattern =
-                    typeof options.regex.pattern === 'string' ? new RegExp(options.regex.pattern) : options.regex.pattern;
-                if (!pattern.test(result)) {
-                    throw new ZodyError(
-                        options.regex.message || `Expected to match pattern ${pattern.source}, received ${result}`,
-                    );
-                }
-            }
-
-            // For strings, min/max can mean minLength/maxLength
-            if (options.min !== undefined && result.length < Number(options.min)) {
-                throw new ZodyError(`Expected string with min length ${options.min}, received ${result.length}`);
-            }
-            if (options.max !== undefined && result.length > Number(options.max)) {
-                throw new ZodyError(`Expected string with max length ${options.max}, received ${result.length}`);
-            }
-
-            // Length validations for strings (minLength/maxLength are more explicit)
-            if (options.minLength !== undefined && result.length < options.minLength) {
-                throw new ZodyError(`Expected string with min length ${options.minLength}, received ${result.length}`);
-            }
-            if (options.maxLength !== undefined && result.length > options.maxLength) {
-                throw new ZodyError(`Expected string with max length ${options.maxLength}, received ${result.length}`);
-            }
-            if (options.length !== undefined && result.length !== options.length) {
-                throw new ZodyError(`Expected string with length ${options.length}, received ${result.length}`);
-            }
-        }
-
-        // Numeric constraints
-        if (typeof result === 'number' || typeof result === 'bigint') {
-            if (options.int && typeof result === 'number' && !Number.isInteger(result)) {
-                throw new ZodyError(`Expected integer, received decimal`);
-            }
-            if (options.float && typeof result === 'number' && Number.isInteger(result)) {
-                // Allow floats that happen to be integers
-            }
-            if (options.min !== undefined && result < (options.min as unknown)) {
-                throw new ZodyError(`Expected >= ${options.min}, received ${result}`);
-            }
-            if (options.max !== undefined && result > (options.max as unknown)) {
-                throw new ZodyError(`Expected <= ${options.max}, received ${result}`);
-            }
-            if (options.gte !== undefined && result < (options.gte as unknown)) {
-                throw new ZodyError(`Expected >= ${options.gte}, received ${result}`);
-            }
-            if (options.lte !== undefined && result > (options.lte as unknown)) {
-                throw new ZodyError(`Expected <= ${options.lte}, received ${result}`);
-            }
-            if (options.gt !== undefined && result <= (options.gt as unknown)) {
-                throw new ZodyError(`Expected > ${options.gt}, received ${result}`);
-            }
-            if (options.lt !== undefined && result >= (options.lt as unknown)) {
-                throw new ZodyError(`Expected < ${options.lt}, received ${result}`);
-            }
-        }
-
-        return result;
-    };
-
-    const validator: Validator<T> = (input: unknown) => parse(input);
-    validator.parse = parse;
-    validator.safeParse = (input: unknown) => {
-        try {
-            return { success: true, data: parse(input) };
-        } catch (error) {
-            return { success: false, error: error instanceof Error ? error : new Error(String(error)) };
-        }
-    };
-
-    // Compile into a specialized fast path
-    validator.compile = (): CompiledNode<T> => {
-        // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: validation logic necessarily complex
-        const compiledParse = (input: unknown): T => {
-            const isInitializing = (globalThis as unknown).__z_initializing__;
-            if (isInitializing && input === undefined) return undefined as T;
-
-            if (options.optional && input === undefined) return undefined as T;
-            if (options.default !== undefined && input === undefined) return options.default;
-            if (input === null && !options.optional) throw new ZodyError(`Expected ${typeName}, received null`);
-
-            let result = parseFn(input);
-
-            // String transforms (apply before length checks)
-            if (typeof result === 'string') {
-                if (options.trim) result = (result as unknown).trim();
-                if (options.toLowerCase) result = (result as unknown).toLowerCase();
-                if (options.toUpperCase) result = (result as unknown).toUpperCase();
-            }
-
-            // Format validations for strings
-            if (typeof result === 'string') {
-                if (options.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result)) {
-                    throw new ZodyError(`Expected valid email, received ${result}`);
-                }
-                if (options.url && !testFormat(result, 'url')) {
-                    throw new ZodyError(`Expected valid URL, received ${result}`);
-                }
-                if (options.uuid && !testFormat(result, 'uuid')) {
-                    throw new ZodyError(`Expected valid UUID, received ${result}`);
-                }
-                if (options.hostname && !testFormat(result, 'hostname')) {
-                    throw new ZodyError(`Expected valid hostname, received ${result}`);
-                }
-                if (options.ipv4 && !testFormat(result, 'ipv4')) {
-                    throw new ZodyError(`Expected valid IPv4, received ${result}`);
-                }
-                if (options.ipv6 && !testFormat(result, 'ipv6')) {
-                    throw new ZodyError(`Expected valid IPv6, received ${result}`);
-                }
-                if (options.jwt && !testFormat(result, 'jwt')) {
-                    throw new ZodyError(`Expected valid JWT, received ${result}`);
-                }
-                if (options.base64 && !testFormat(result, 'base64')) {
-                    throw new ZodyError(`Expected valid base64, received ${result}`);
-                }
-                if (options.hex && !testFormat(result, 'hex')) {
-                    throw new ZodyError(`Expected valid hex, received ${result}`);
-                }
-                if (options.regex) {
-                    const pattern =
-                        typeof options.regex.pattern === 'string' ? new RegExp(options.regex.pattern) : options.regex.pattern;
-                    if (!pattern.test(result)) {
-                        throw new ZodyError(
-                            options.regex.message || `Expected to match pattern ${pattern.source}, received ${result}`,
-                        );
-                    }
-                }
-
-                // For strings, min/max can mean minLength/maxLength
-                if (options.min !== undefined && result.length < Number(options.min)) {
-                    throw new ZodyError(`Expected string with min length ${options.min}, received ${result.length}`);
-                }
-                if (options.max !== undefined && result.length > Number(options.max)) {
-                    throw new ZodyError(`Expected string with max length ${options.max}, received ${result.length}`);
-                }
-
-                // Length validations for strings (minLength/maxLength are more explicit)
-                if (options.minLength !== undefined && result.length < options.minLength) {
-                    throw new ZodyError(`Expected string with min length ${options.minLength}, received ${result.length}`);
-                }
-                if (options.maxLength !== undefined && result.length > options.maxLength) {
-                    throw new ZodyError(`Expected string with max length ${options.maxLength}, received ${result.length}`);
-                }
-                if (options.length !== undefined && result.length !== options.length) {
-                    throw new ZodyError(`Expected string with length ${options.length}, received ${result.length}`);
-                }
-            }
-
-            // Numeric constraints
-            if (typeof result === 'number' || typeof result === 'bigint') {
-                if (options.int && typeof result === 'number' && !Number.isInteger(result)) {
-                    throw new ZodyError(`Expected integer, received decimal`);
-                }
-                if (options.float && typeof result === 'number' && Number.isInteger(result)) {
-                    // Allow floats that happen to be integers
-                }
-                if (options.min !== undefined && result < (options.min as unknown)) {
-                    throw new ZodyError(`Expected >= ${options.min}, received ${result}`);
-                }
-                if (options.max !== undefined && result > (options.max as unknown)) {
-                    throw new ZodyError(`Expected <= ${options.max}, received ${result}`);
-                }
-                if (options.gte !== undefined && result < (options.gte as unknown)) {
-                    throw new ZodyError(`Expected >= ${options.gte}, received ${result}`);
-                }
-                if (options.lte !== undefined && result > (options.lte as unknown)) {
-                    throw new ZodyError(`Expected <= ${options.lte}, received ${result}`);
-                }
-                if (options.gt !== undefined && result <= (options.gt as unknown)) {
-                    throw new ZodyError(`Expected > ${options.gt}, received ${result}`);
-                }
-                if (options.lt !== undefined && result >= (options.lt as unknown)) {
-                    throw new ZodyError(`Expected < ${options.lt}, received ${result}`);
-                }
-            }
-
-            return result;
-        };
-
-        return {
-            validate(input: unknown): boolean {
-                try {
-                    compiledParse(input);
-                    return true;
-                } catch {
-                    return false;
-                }
-            },
-            parse(input: unknown): T {
-                return compiledParse(input);
-            },
-        };
-    };
-
-    // Chainable methods
-    validator.optional = () => createValidator(typeName, parseFn, { ...options, optional: true });
-    validator.nullable = () => createValidator(typeName, (v) => (v === null ? null : parseFn(v)), options);
-    validator.default = (v: T) => createValidator(typeName, parseFn, { ...options, default: v });
-    validator.min = (v: number | bigint) => createValidator(typeName, parseFn, { ...options, min: v });
-    validator.max = (v: number | bigint) => createValidator(typeName, parseFn, { ...options, max: v });
-    validator.gte = (v: number | bigint) => createValidator(typeName, parseFn, { ...options, gte: v });
-    validator.lte = (v: number | bigint) => createValidator(typeName, parseFn, { ...options, lte: v });
-    validator.gt = (v: number | bigint) => createValidator(typeName, parseFn, { ...options, gt: v });
-    validator.lt = (v: number | bigint) => createValidator(typeName, parseFn, { ...options, lt: v });
-    validator.email = () => createValidator(typeName, parseFn, { ...options, email: true });
-    validator.int = () => createValidator(typeName, parseFn, { ...options, int: true });
-    validator.float = () => createValidator(typeName, parseFn, { ...options, float: true });
-    validator.url = () => createValidator(typeName, parseFn, { ...options, url: true });
-    validator.uuid = () => createValidator(typeName, parseFn, { ...options, uuid: true });
-    validator.hostname = () => createValidator(typeName, parseFn, { ...options, hostname: true });
-    validator.ipv4 = () => createValidator(typeName, parseFn, { ...options, ipv4: true });
-    validator.ipv6 = () => createValidator(typeName, parseFn, { ...options, ipv6: true });
-    validator.jwt = () => createValidator(typeName, parseFn, { ...options, jwt: true });
-    validator.base64 = () => createValidator(typeName, parseFn, { ...options, base64: true });
-    validator.hex = () => createValidator(typeName, parseFn, { ...options, hex: true });
-    validator.regex = (pattern: RegExp | string, message?: string) =>
-        createValidator(typeName, parseFn, { ...options, regex: { pattern, message } });
-    validator.trim = () => createValidator(typeName, parseFn, { ...options, trim: true });
-    validator.toLowerCase = () => createValidator(typeName, parseFn, { ...options, toLowerCase: true });
-    validator.toUpperCase = () => createValidator(typeName, parseFn, { ...options, toUpperCase: true });
-    validator.minLength = (len: number) => createValidator(typeName, parseFn, { ...options, minLength: len });
-    validator.maxLength = (len: number) => createValidator(typeName, parseFn, { ...options, maxLength: len });
-    validator.describe = (text: string) => createValidator(typeName, parseFn, { ...options, describe: text });
-
-    // Use Object.defineProperty for 'length' since it's read-only on functions
-    Object.defineProperty(validator, 'length', {
-        value: (len: number) => createValidator(typeName, parseFn, { ...options, length: len }),
-        writable: false,
-        enumerable: false,
-        configurable: true,
-    });
-
-    return validator;
-}
-
-const stringValidator = () =>
-    createValidator('string', (v) => {
-        if (typeof v === 'string') return v;
-        throw new Error(`Expected string, received ${typeof v}`);
-    });
-
-const numberValidator = () =>
-    createValidator('number', (v) => {
-        if (typeof v === 'number') return v;
-        const coerced = Number(v);
-        if (Number.isNaN(coerced)) throw new Error(`Cannot coerce ${typeof v} to number`);
-        return coerced;
-    });
-
-const booleanValidator = () =>
-    createValidator('boolean', (v) => {
-        if (typeof v === 'boolean') return v;
-        throw new Error(`Expected boolean, received ${typeof v}`);
-    });
-
-const bigintValidator = () =>
-    createValidator('bigint', (v) => {
-        if (typeof v === 'bigint') return v;
-        try {
-            return BigInt(v);
-        } catch {
-            throw new Error(`Cannot coerce ${typeof v} to bigint`);
-        }
-    });
-
-const dateValidator = () =>
-    createValidator('Date', (v) => {
-        if (v instanceof Date) return v;
-        const coerced = new Date(v);
-        if (Number.isNaN(coerced.getTime())) throw new Error(`Cannot coerce ${typeof v} to Date`);
-        return coerced;
-    });
-
-const arrayValidator = (
-    inner: Validator<unknown> = { parse: (v) => v, safeParse: (v) => ({ success: true, data: v }) } as unknown,
-) => {
-    const validator = createValidator('array', (v) => {
-        if (!Array.isArray(v)) throw new Error(`Expected array, received ${typeof v}`);
-        return v.map((item) => inner.parse(item));
-    });
-
-    const baseCompile = validator.compile;
-    validator.compile = () => {
-        const compiled = inner.compile?.() ?? { validate: (_v: unknown) => true, parse: (v: unknown) => v };
-        const baseNode = baseCompile();
-
-        return {
-            validate(input: unknown): boolean {
-                if (!Array.isArray(input)) return false;
-                for (const item of input) {
-                    if (!compiled.validate(item)) return false;
-                }
-                return true;
-            },
-            parse(input: unknown) {
-                return baseNode.parse(input);
-            },
-        };
-    };
-
-    return validator;
-};
-
-const unknownValidator = () => createValidator('unknown', (v) => v);
-
-const objectValidator = (shape: Record<string, Validator<unknown>>) => {
-    const validator = createValidator('object', (v) => {
-        if (typeof v !== 'object' || v === null) throw new Error(`Expected object, received ${typeof v}`);
-        const result: Record<string, unknown> = {};
-        for (const [key, validator] of Object.entries(shape)) {
-            result[key] = validator.parse((v as unknown)[key]);
-        }
-        return result;
-    });
-
-    const baseCompile = validator.compile;
-    validator.compile = () => {
-        const compiledFields: Array<[string, CompiledNode]> = [];
-        for (const [key, fieldValidator] of Object.entries(shape)) {
-            const compiled = fieldValidator.compile?.() ?? { validate: (_v: unknown) => true, parse: (v: unknown) => v };
-            compiledFields.push([key, compiled]);
-        }
-
-        const baseNode = baseCompile();
-
-        return {
-            validate(input: unknown): boolean {
-                if (typeof input !== 'object' || input === null) return false;
-                for (const [key, compiled] of compiledFields) {
-                    if (!compiled.validate((input as unknown)[key])) return false;
-                }
-                return true;
-            },
-            parse(input: unknown) {
-                return baseNode.parse(input);
-            },
-        };
-    };
-
-    return validator;
-};
 
 export type ZodyInfer<T extends { [PHANTOM]?: unknown }> = T extends { [PHANTOM]?: infer O } ? O : never;
 export type ZodyInferInput<T extends { [PHANTOM]?: unknown }> = T extends { [PHANTOM]?: { input: infer I } } ? I : never;
@@ -586,14 +148,52 @@ type ClassMeta = {
     sealed?: boolean;
 };
 
-type DecoratorFn = ((value: undefined, context: ClassFieldDecoratorContext) => void) & Record<string, unknown>;
+type DecoratorFn = ((value: undefined, context: ClassFieldDecoratorContext) => void) & {
+    readonly string: DecoratorFn;
+    readonly number: DecoratorFn;
+    readonly boolean: DecoratorFn;
+    readonly bigint: DecoratorFn;
+    readonly date: DecoratorFn;
+    readonly int: DecoratorFn;
+    readonly float: DecoratorFn;
+    readonly email: DecoratorFn;
+    readonly url: DecoratorFn;
+    readonly uuid: DecoratorFn;
+    readonly hostname: DecoratorFn;
+    readonly ipv4: DecoratorFn;
+    readonly ipv6: DecoratorFn;
+    readonly jwt: DecoratorFn;
+    readonly base64: DecoratorFn;
+    readonly hex: DecoratorFn;
+    readonly trim: DecoratorFn;
+    readonly toLowerCase: DecoratorFn;
+    readonly toUpperCase: DecoratorFn;
+    readonly optional: DecoratorFn;
+    readonly nullable: DecoratorFn;
+    min(value: number | bigint): DecoratorFn;
+    max(value: number | bigint): DecoratorFn;
+    gte(value: number | bigint): DecoratorFn;
+    lte(value: number | bigint): DecoratorFn;
+    gt(value: number | bigint): DecoratorFn;
+    lt(value: number | bigint): DecoratorFn;
+    default(value: unknown): DecoratorFn;
+    array(inner?: ChainSpec | DecoratorFn): DecoratorFn;
+    union(options: (ChainSpec | DecoratorFn)[]): DecoratorFn;
+    regex(pattern: RegExp | string, message?: string): DecoratorFn;
+    minLength(len: number): DecoratorFn;
+    maxLength(len: number): DecoratorFn;
+    length(len: number): DecoratorFn;
+    describe(text: string): DecoratorFn;
+    ops: Op[];
+};
 
 // Type inference: extract the parsed/validated type from the schema validator
 type InferIn<T extends Ctor> = T extends { toZod(): Validator<infer S> } ? Parameters<Validator<S>['parse']>[0] : never;
 type InferOut<T extends Ctor> = T extends { toZod(): Validator<infer S> } ? S : never;
 
 function getClassMeta(ctor: object): ClassMeta {
-    if (!ctor[META_KEY]) {
+    const holder = ctor as Record<string, unknown>;
+    if (!holder[META_KEY]) {
         Object.defineProperty(ctor, META_KEY, {
             value: { fields: new Map(), inferDefault: true } satisfies ClassMeta,
             enumerable: false,
@@ -601,11 +201,15 @@ function getClassMeta(ctor: object): ClassMeta {
             writable: false,
         });
     }
-    return ctor[META_KEY] as ClassMeta;
+    return holder[META_KEY] as ClassMeta;
 }
 
+// `owner` is always already a class constructor (its one call site passes
+// `this.constructor` from inside a field initializer) — using `owner.constructor`
+// would resolve to `Function` instead, silently attaching metadata to the wrong
+// object and losing defaultValue/inferredType capture for every class.
 function getOrCreateFieldMeta(owner: object, key: string): FieldMeta {
-    const meta = getClassMeta(owner.constructor ?? owner);
+    const meta = getClassMeta(owner);
     let field = meta.fields.get(key);
     if (!field) {
         field = { key, ops: [] };
@@ -614,29 +218,19 @@ function getOrCreateFieldMeta(owner: object, key: string): FieldMeta {
     return field;
 }
 
-function _tsCtorToRoot(ctor: object): RootKind | undefined {
-    if (ctor === String) return 'string';
-    if (ctor === Number) return 'number';
-    if (ctor === Boolean) return 'boolean';
-    if (ctor === BigInt) return 'bigint';
-    if (ctor === Date) return 'date';
-    if (ctor === Array) return 'array';
-    return undefined;
-}
-
 function makeDecorator(spec: ChainSpec): DecoratorFn {
     const plus = (op: Op) => makeDecorator({ ops: [...spec.ops, op] });
 
-    const dec: unknown = (_value: undefined, context: ClassFieldDecoratorContext) => {
+    const dec = ((_value: undefined, context: ClassFieldDecoratorContext) => {
         const fieldName = String(context.name);
 
         // Store the decorator spec on the context metadata for later retrieval
         // This allows the Schema decorator to access field decorator info without needing instances
-        const metadata = (context.metadata as unknown) ?? {};
+        const metadata = (context.metadata ?? {}) as Record<PropertyKey, unknown>;
         if (!metadata[Symbol.for('zody.fields')]) {
             metadata[Symbol.for('zody.fields')] = {};
         }
-        (metadata[Symbol.for('zody.fields')] as unknown)[fieldName] = {
+        (metadata[Symbol.for('zody.fields')] as Record<string, unknown>)[fieldName] = {
             ops: spec.ops,
         };
 
@@ -646,7 +240,7 @@ function makeDecorator(spec: ChainSpec): DecoratorFn {
             if (initializerRan) return; // Prevent duplicate execution
             initializerRan = true;
 
-            const ctor = (this as unknown).constructor;
+            const ctor = (this as { constructor: object }).constructor;
 
             // Register the field decoration in the global registry
             registerFieldDecoration(fieldName, spec.ops);
@@ -658,13 +252,13 @@ function makeDecorator(spec: ChainSpec): DecoratorFn {
             }
 
             // Capture the initial value (default) if present
-            const current = (this as unknown)[fieldName];
+            const current = (this as Record<string, unknown>)[fieldName];
             if (current !== undefined) {
                 field.defaultValue = current;
                 field.inferredType ??= inferFromValue(current);
             }
         });
-    };
+    }) as DecoratorFn;
 
     // Create lazy getter using Object.defineProperty one at a time to avoid conflicts
     const addLazyGetter = (name: string, fn: () => DecoratorFn) => {
@@ -705,23 +299,32 @@ function makeDecorator(spec: ChainSpec): DecoratorFn {
     addLazyGetter('nullable', () => plus({ kind: 'nullable' }));
 
     // Methods
-    dec.min = (value: number | bigint) => plus({ kind: 'min', value });
-    dec.max = (value: number | bigint) => plus({ kind: 'max', value });
-    dec.gte = (value: number | bigint) => plus({ kind: 'gte', value });
-    dec.lte = (value: number | bigint) => plus({ kind: 'lte', value });
-    dec.gt = (value: number | bigint) => plus({ kind: 'gt', value });
-    dec.lt = (value: number | bigint) => plus({ kind: 'lt', value });
-    dec.default = (value: unknown) => plus({ kind: 'default', value });
-    dec.array = (inner?: ChainSpec | DecoratorFn) => {
-        const innerSpec = inner && 'ops' in (inner as unknown) ? (inner as unknown as ChainSpec) : { ops: [] };
-        return makeDecorator({ ops: [...spec.ops, { kind: 'root', value: 'array' }, { kind: 'arrayOf', value: innerSpec }] });
+    dec['min'] = (value: number | bigint) => plus({ kind: 'min', value });
+    dec['max'] = (value: number | bigint) => plus({ kind: 'max', value });
+    dec['gte'] = (value: number | bigint) => plus({ kind: 'gte', value });
+    dec['lte'] = (value: number | bigint) => plus({ kind: 'lte', value });
+    dec['gt'] = (value: number | bigint) => plus({ kind: 'gt', value });
+    dec['lt'] = (value: number | bigint) => plus({ kind: 'lt', value });
+    dec['default'] = (value: unknown) => plus({ kind: 'default', value });
+    dec['array'] = (inner?: ChainSpec | DecoratorFn) => {
+        // Omit the `arrayOf` op entirely when no inner type is given, rather than
+        // adding one with an empty ops list — toZodNode()/buildPropertySchema() would
+        // otherwise try to normalize that empty spec and throw "cannot infer type",
+        // instead of falling through to their intended unknown()/`{}` item fallback.
+        const arrayOps: Op[] =
+            inner && 'ops' in (inner as object) ? [{ kind: 'arrayOf', value: inner as unknown as ChainSpec }] : [];
+        return makeDecorator({ ops: [...spec.ops, { kind: 'root', value: 'array' }, ...arrayOps] });
     };
-    dec.union = (options: (ChainSpec | DecoratorFn)[]) => plus({ kind: 'unionOf', value: options as ChainSpec[] });
-    dec.regex = (pattern: RegExp | string, message?: string) => plus({ kind: 'regex', value: { pattern, message } });
-    dec.minLength = (len: number) => plus({ kind: 'minLength', value: len });
-    dec.maxLength = (len: number) => plus({ kind: 'maxLength', value: len });
-    dec.describe = (text: string) => plus({ kind: 'describe', value: text });
-    dec.ops = spec.ops;
+    dec['union'] = (options: (ChainSpec | DecoratorFn)[]) =>
+        makeDecorator({
+            ops: [...spec.ops, { kind: 'root', value: 'union' }, { kind: 'unionOf', value: options as ChainSpec[] }],
+        });
+    dec['regex'] = (pattern: RegExp | string, message?: string) =>
+        plus({ kind: 'regex', value: message === undefined ? { pattern } : { pattern, message } });
+    dec['minLength'] = (len: number) => plus({ kind: 'minLength', value: len });
+    dec['maxLength'] = (len: number) => plus({ kind: 'maxLength', value: len });
+    dec['describe'] = (text: string) => plus({ kind: 'describe', value: text });
+    dec['ops'] = spec.ops;
 
     // Define 'length' using Object.defineProperty since it's read-only on functions
     Object.defineProperty(dec, 'length', {
@@ -757,7 +360,8 @@ function gatherMeta(ctor: object): ClassMeta {
     const chain: object[] = [];
     let cur = ctor;
     while (cur && cur !== Function.prototype) {
-        if (cur[META_KEY]) chain.unshift(cur[META_KEY]);
+        const curHolder = cur as Record<string, unknown>;
+        if (curHolder[META_KEY]) chain.unshift(curHolder[META_KEY] as object);
         cur = Object.getPrototypeOf(cur);
     }
     const out: ClassMeta = { fields: new Map(), inferDefault: true };
@@ -789,127 +393,146 @@ function normalizeField(field: FieldMeta, inferDefault: boolean): FieldMeta {
     return out;
 }
 
-function applyOps(schema: object, field: FieldMeta): object {
+// Calls `name` on `dyn` — dispatched dynamically because NumV/StrV/BigIntV/ArrV each
+// expose a different, non-overlapping method set (e.g. `min`/`max` resolve on every
+// one of them to that class's own correct semantics: length for strings, gte/lte for
+// numbers) with no shared typed interface worth declaring.
+function call(dyn: DynSchema, name: string, ...args: unknown[]): DynSchema {
+    return dyn[name]!(...args) as DynSchema;
+}
+
+// Applies each decorator op onto the validator.ts node built for the field's root type.
+function applyOps(schema: Validator<unknown>, field: FieldMeta): Validator<unknown> {
+    let dyn = schema as DynSchema;
     for (const op of field.ops) {
         switch (op.kind) {
             case 'root':
                 break; // Skip root ops, they're handled by toZodNode
             case 'int':
-                schema = schema.int();
+                dyn = call(dyn, 'int');
                 break;
             case 'float':
-                schema = schema.float();
+                dyn = call(dyn, 'float');
                 break;
             case 'min':
-                schema = schema.min(op.value as unknown);
+                dyn = call(dyn, 'min', op.value);
                 break;
             case 'max':
-                schema = schema.max(op.value as unknown);
+                dyn = call(dyn, 'max', op.value);
                 break;
             case 'gte':
-                schema = schema.gte(op.value as unknown);
+                dyn = call(dyn, 'gte', op.value);
                 break;
             case 'lte':
-                schema = schema.lte(op.value as unknown);
+                dyn = call(dyn, 'lte', op.value);
                 break;
             case 'gt':
-                schema = schema.gt(op.value as unknown);
+                dyn = call(dyn, 'gt', op.value);
                 break;
             case 'lt':
-                schema = schema.lt(op.value as unknown);
+                dyn = call(dyn, 'lt', op.value);
                 break;
             case 'email':
-                schema = schema.email();
+                dyn = call(dyn, 'email');
                 break;
             case 'url':
-                schema = schema.url();
+                dyn = call(dyn, 'url');
                 break;
             case 'uuid':
-                schema = schema.uuid();
+                dyn = call(dyn, 'uuid');
                 break;
             case 'hostname':
-                schema = schema.hostname();
+                dyn = call(dyn, 'hostname');
                 break;
             case 'ipv4':
-                schema = schema.ipv4();
+                dyn = call(dyn, 'ipv4');
                 break;
             case 'ipv6':
-                schema = schema.ipv6();
+                dyn = call(dyn, 'ipv6');
                 break;
             case 'jwt':
-                schema = schema.jwt();
+                dyn = call(dyn, 'jwt');
                 break;
             case 'base64':
-                schema = schema.base64();
+                dyn = call(dyn, 'base64');
                 break;
             case 'hex':
-                schema = schema.hex();
+                dyn = call(dyn, 'hex');
                 break;
             case 'regex':
-                schema = schema.regex(op.value.pattern, op.value.message);
+                dyn = call(
+                    dyn,
+                    'regex',
+                    typeof op.value.pattern === 'string' ? new RegExp(op.value.pattern) : op.value.pattern,
+                    op.value.message,
+                );
                 break;
             case 'trim':
-                schema = schema.trim();
+                dyn = call(dyn, 'trim');
                 break;
             case 'toLowerCase':
-                schema = schema.toLowerCase();
+                dyn = call(dyn, 'toLowerCase');
                 break;
             case 'toUpperCase':
-                schema = schema.toUpperCase();
+                dyn = call(dyn, 'toUpperCase');
                 break;
             case 'minLength':
-                schema = schema.minLength(op.value);
+                // StrV names its length constraint `min`; ArrV names it `minLength`.
+                dyn = field.inferredType === 'array' ? call(dyn, 'minLength', op.value) : call(dyn, 'min', op.value);
                 break;
             case 'maxLength':
-                schema = schema.maxLength(op.value);
+                dyn = field.inferredType === 'array' ? call(dyn, 'maxLength', op.value) : call(dyn, 'max', op.value);
                 break;
             case 'length':
-                schema = schema.length(op.value);
+                dyn = call(dyn, 'length', op.value);
                 break;
             case 'describe':
                 break; // describe is only used in .defs(), not at parse time
             case 'optional':
-                schema = schema.optional();
+                dyn = call(dyn, 'optional');
                 break;
             case 'nullable':
-                schema = schema.nullable();
+                dyn = v.nullable(dyn) as unknown as DynSchema;
                 break;
             case 'default':
-                schema = schema.default(op.value as unknown);
+                dyn = call(dyn, 'default', op.value);
                 break;
         }
     }
-    return schema;
+    return dyn;
 }
 
 function toZodNode(field: FieldMeta): Validator<unknown> {
     let schema: Validator<unknown>;
     switch (field.inferredType) {
         case 'string':
-            schema = stringValidator();
+            schema = v.string();
             break;
         case 'number':
-            schema = numberValidator();
+            schema = v.number();
             break;
         case 'boolean':
-            schema = booleanValidator();
+            schema = v.boolean();
             break;
         case 'bigint':
-            schema = bigintValidator();
+            schema = v.bigint();
             break;
         case 'date':
-            schema = dateValidator();
+            schema = v.date();
             break;
         case 'array': {
             const arrayOp = field.ops.find((x) => x.kind === 'arrayOf') as Extract<Op, { kind: 'arrayOf' }> | undefined;
-            const inner = arrayOp ? toZodFromSpec(arrayOp.value as ChainSpec) : unknownValidator();
-            schema = arrayValidator(inner);
+            const inner = arrayOp ? toZodFromSpec(arrayOp.value as ChainSpec) : v.unknown();
+            schema = v.array(inner);
             break;
         }
         case 'union': {
             const unionOp = field.ops.find((x) => x.kind === 'unionOf') as Extract<Op, { kind: 'unionOf' }> | undefined;
-            if (!unionOp) throw new Error(`zody schema error on ${field.key}: missing union options`);
-            schema = toZodFromSpec(unionOp.value[0]);
+            if (!unionOp || unionOp.value.length === 0)
+                throw new Error(`zody schema error on ${field.key}: missing union options`);
+            const options = unionOp.value.map((spec) => toZodFromSpec(spec));
+            if (options.length < 2) throw new Error(`zody schema error on ${field.key}: union requires at least 2 options`);
+            schema = v.union(options as [Validator<unknown>, Validator<unknown>, ...Validator<unknown>[]]);
             break;
         }
         default:
@@ -921,43 +544,46 @@ function toZodNode(field: FieldMeta): Validator<unknown> {
     return applyOps(schema, field);
 }
 
-function toZodFromSpec(spec: ChainSpec): object {
+function toZodFromSpec(spec: ChainSpec): Validator<unknown> {
     const fake: FieldMeta = normalizeField({ key: '<inline>', ops: spec.ops }, false);
     return toZodNode(fake);
 }
 
-function makeCompiledValidate(schema: object) {
-    const compiled = schema.compile?.();
-    return compiled ? (input: unknown) => compiled.validate(input) : (input: unknown) => schema.safeParse(input).success;
-}
+type Artifacts = {
+    schema: Validator<unknown>;
+};
 
-function buildArtifacts(ctor: object) {
-    if (ctor[CACHE]) return ctor[CACHE];
+function buildArtifacts(ctor: object): Artifacts {
+    const holder = ctor as Record<symbol, unknown>;
+    if (holder[CACHE]) return holder[CACHE] as Artifacts;
     const meta = gatherMeta(ctor);
-    const shape: Record<string, unknown> = {};
+    const shape: Record<string, Validator<unknown>> = {};
     for (const [key, raw] of meta.fields) {
         const norm = normalizeField(raw, meta.inferDefault);
         shape[key] = toZodNode(norm);
     }
-    const schema = objectValidator(shape);
-    const validate = makeCompiledValidate(schema);
-    const cache = { schema, validate };
+    const schema = v.object(shape);
+    const cache: Artifacts = { schema };
     Object.defineProperty(ctor, CACHE, { value: cache, enumerable: false });
     return cache;
 }
 
 function Schema(options?: { inferDefault?: boolean; autocompile?: boolean }) {
-    return <T extends Ctor>(target: T, _context: ClassDecoratorContext<T>) => {
+    return <T extends Ctor>(target: T, _context: ClassDecoratorContext<T>): T & ZodyCtor<InstanceType<T>> => {
         const meta = getClassMeta(target);
         meta.inferDefault = options?.inferDefault ?? true;
         const shouldAutocompile = options?.autocompile ?? false;
 
-        class ZodyClass extends (target as unknown) {
+        class ZodyClass extends (target as unknown as new (...args: unknown[]) => object) {
             static toZod() {
                 return buildArtifacts(ZodyClass).schema;
             }
+            // Forwards to the cached root schema (an ObjV instance). That instance's
+            // own `validate()` self-replaces with a codegen'd fast path on its first
+            // call — because the schema instance is cached per class, that replacement
+            // persists across every later `ZodyClass.validate()` call automatically.
             static validate(input: unknown): input is InferOut<typeof ZodyClass> {
-                return buildArtifacts(ZodyClass).validate(input);
+                return buildArtifacts(ZodyClass).schema.validate(input) as boolean;
             }
             static safeParse(input: unknown) {
                 return ZodyClass.toZod().safeParse(input);
@@ -991,11 +617,11 @@ function Schema(options?: { inferDefault?: boolean; autocompile?: boolean }) {
                 };
 
                 if (required.length > 0) {
-                    schema.required = required;
+                    schema['required'] = required;
                 }
 
                 if (includeSchemaVersion) {
-                    schema.$schema = 'http://json-schema.org/draft-07/schema#';
+                    schema['$schema'] = 'http://json-schema.org/draft-07/schema#';
                 }
 
                 return schema;
@@ -1011,14 +637,14 @@ function Schema(options?: { inferDefault?: boolean; autocompile?: boolean }) {
         // Trigger field initializers by creating a temporary instance with undefined values
         // This ensures field decorator metadata is populated at class definition time
         // Mark that we're in initialization mode so validators don't throw on undefined
-        const originalIsInitializing = (globalThis as unknown).__z_initializing__;
-        (globalThis as unknown).__z_initializing__ = true;
+        const originalIsInitializing = (globalThis as GlobalWithZodyFlag).__z_initializing__;
+        (globalThis as GlobalWithZodyFlag).__z_initializing__ = true;
         try {
-            new (ZodyClass as unknown)();
+            new ZodyClass();
         } catch (_e) {
             // Ignore errors from instantiation - some initializers may have run anyway
         } finally {
-            (globalThis as unknown).__z_initializing__ = originalIsInitializing;
+            (globalThis as GlobalWithZodyFlag).__z_initializing__ = originalIsInitializing;
         }
 
         // Populate any missing field metadata from the global decoration registry
@@ -1040,16 +666,22 @@ function Schema(options?: { inferDefault?: boolean; autocompile?: boolean }) {
             }
         }
 
-        // Trigger autocompile if requested
+        // Trigger autocompile if requested: force the root schema's self-replacing
+        // validate() to build+install its codegen'd fast path ahead of time. The
+        // input doesn't matter — ObjV.validate() self-replaces on its first call
+        // regardless of whether that call's input is actually valid.
         if (shouldAutocompile) {
             setImmediate(() => {
-                buildArtifacts(ZodyClass);
+                buildArtifacts(ZodyClass).schema.validate(undefined);
             });
         }
 
-        return ZodyClass as unknown;
+        return ZodyClass as unknown as T & ZodyCtor<InstanceType<T>>;
     };
 }
+
+// biome-ignore lint/style/useNamingConvention: matches the existing __z_initializing__ runtime flag name
+type GlobalWithZodyFlag = typeof globalThis & { __z_initializing__?: boolean | undefined };
 
 function buildPropertySchema(field: FieldMeta): Record<string, unknown> {
     const schema: Record<string, unknown> = {};
@@ -1059,24 +691,24 @@ function buildPropertySchema(field: FieldMeta): Record<string, unknown> {
     const isNullable = field.ops.some((op) => op.kind === 'nullable');
 
     if (field.inferredType === 'string') {
-        schema.type = 'string';
+        schema['type'] = 'string';
     } else if (field.inferredType === 'number') {
-        schema.type = 'number';
+        schema['type'] = 'number';
     } else if (field.inferredType === 'boolean') {
-        schema.type = 'boolean';
+        schema['type'] = 'boolean';
     } else if (field.inferredType === 'date') {
-        schema.type = 'string';
-        schema.format = 'date-time';
+        schema['type'] = 'string';
+        schema['format'] = 'date-time';
     } else if (field.inferredType === 'bigint') {
-        schema.type = 'integer';
+        schema['type'] = 'integer';
     } else if (field.inferredType === 'array') {
-        schema.type = 'array';
+        schema['type'] = 'array';
         const arrayOp = field.ops.find((x) => x.kind === 'arrayOf') as Extract<Op, { kind: 'arrayOf' }> | undefined;
         if (arrayOp) {
             const innerField = normalizeField({ key: '<inner>', ops: (arrayOp.value as ChainSpec).ops }, false);
-            schema.items = buildPropertySchema(innerField);
+            schema['items'] = buildPropertySchema(innerField);
         } else {
-            schema.items = {};
+            schema['items'] = {};
         }
     }
 
@@ -1084,71 +716,71 @@ function buildPropertySchema(field: FieldMeta): Record<string, unknown> {
     for (const op of field.ops) {
         switch (op.kind) {
             case 'email':
-                schema.format = 'email';
+                schema['format'] = 'email';
                 break;
             case 'url':
-                schema.format = 'uri';
+                schema['format'] = 'uri';
                 break;
             case 'uuid':
-                schema.format = 'uuid';
+                schema['format'] = 'uuid';
                 break;
             case 'hostname':
-                schema.format = 'hostname';
+                schema['format'] = 'hostname';
                 break;
             case 'ipv4':
-                schema.format = 'ipv4';
+                schema['format'] = 'ipv4';
                 break;
             case 'ipv6':
-                schema.format = 'ipv6';
+                schema['format'] = 'ipv6';
                 break;
             case 'jwt':
-                schema.pattern = '^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*$';
+                schema['pattern'] = '^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]*$';
                 break;
             case 'base64':
-                schema.pattern = '^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$';
+                schema['pattern'] = '^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$';
                 break;
             case 'hex':
-                schema.pattern = '^[0-9a-fA-F]*$';
+                schema['pattern'] = '^[0-9a-fA-F]*$';
                 break;
             case 'regex':
-                schema.pattern = typeof op.value.pattern === 'string' ? op.value.pattern : op.value.pattern.source;
+                schema['pattern'] = typeof op.value.pattern === 'string' ? op.value.pattern : op.value.pattern.source;
                 break;
             case 'minLength':
-                schema.minLength = op.value;
+                schema['minLength'] = op.value;
                 break;
             case 'maxLength':
-                schema.maxLength = op.value;
+                schema['maxLength'] = op.value;
                 break;
             case 'length':
-                schema.minLength = op.value;
-                schema.maxLength = op.value;
+                schema['minLength'] = op.value;
+                schema['maxLength'] = op.value;
                 break;
             case 'min':
-                schema.minimum = Number(op.value);
+                schema['minimum'] = Number(op.value);
                 break;
             case 'max':
-                schema.maximum = Number(op.value);
+                schema['maximum'] = Number(op.value);
                 break;
             case 'gte':
-                schema.minimum = Number(op.value);
+                schema['minimum'] = Number(op.value);
                 break;
             case 'lte':
-                schema.maximum = Number(op.value);
+                schema['maximum'] = Number(op.value);
                 break;
             case 'gt':
-                schema.exclusiveMinimum = Number(op.value);
+                schema['exclusiveMinimum'] = Number(op.value);
                 break;
             case 'lt':
-                schema.exclusiveMaximum = Number(op.value);
+                schema['exclusiveMaximum'] = Number(op.value);
                 break;
             case 'int':
-                schema.type = 'integer';
+                schema['type'] = 'integer';
                 break;
             case 'float':
-                schema.type = 'number';
+                schema['type'] = 'number';
                 break;
             case 'describe':
-                schema.description = op.value;
+                schema['description'] = op.value;
                 break;
         }
     }
@@ -1156,7 +788,7 @@ function buildPropertySchema(field: FieldMeta): Record<string, unknown> {
     // Handle optional/nullable
     if (isOptional || isNullable) {
         if (isNullable) {
-            schema.type = [schema.type, 'null'];
+            schema['type'] = [schema['type'], 'null'];
         }
         // Optional means it's not in required[], no schema change needed
     }
@@ -1164,32 +796,57 @@ function buildPropertySchema(field: FieldMeta): Record<string, unknown> {
     return schema;
 }
 
-// Internal functional-layer exports for test schemas within zody package
-// These are not exported from the main barrel (index.ts) to avoid namespace collision
-// but are available for internal tests and ad-hoc schemas
-const string = stringValidator;
-const number = numberValidator;
-const boolean = booleanValidator;
-const bigint = bigintValidator;
-const date = dateValidator;
-const array = arrayValidator;
-const object = objectValidator;
-const unknown = unknownValidator;
-
-// Export for internal/test use only
-export { array, bigint, boolean, date, number, object, string, unknown };
-
 // Type for zody class constructors
 export type ZodyCtor<T = unknown> = {
     parse(input: unknown): T;
     safeParse(input: unknown): { success: boolean; data?: T; error?: Error };
+    validate(input: unknown): input is T;
     toZod(): Validator<T>;
     defs(includeSchemaVersion?: boolean): Record<string, unknown>;
 };
 
+/**
+ * Optional base class for @z.Schema()-decorated classes.
+ *
+ * TypeScript only lets a class decorator change the *type* of what it decorates when applied
+ * to a class expression, not a class declaration (`class Foo {}`) — so a decorated declaration
+ * keeps its plain, undecorated static type at every usage site, even though the decorator does
+ * attach `.parse()`/`.safeParse()`/etc. at runtime. That normally forces callers to write
+ * `Foo as unknown as ZodyCtor` wherever the class is used as a ZodyCtor.
+ *
+ * Extending this class instead gives those statics to the subclass via ordinary inheritance
+ * (which TS *does* track), so no cast is needed:
+ *
+ *   @z.Schema()
+ *   class Foo extends ZodySchema {
+ *       @z.string name!: string;
+ *   }
+ *   const schema: ZodyCtor<Foo> = Foo; // type-checks, no cast
+ *
+ * The methods here are never actually called — @z.Schema() always replaces them with real
+ * implementations at runtime — they exist purely so TS can see the statics on the subclass.
+ */
+// biome-ignore lint/complexity/noStaticOnlyClass: exists to be subclassed for its static type declarations, not instantiated
+export abstract class ZodySchema {
+    declare static parse: <T extends typeof ZodySchema>(this: T, input: unknown) => InstanceType<T>;
+    declare static safeParse: <T extends typeof ZodySchema>(
+        this: T,
+        input: unknown,
+    ) => { success: boolean; data?: InstanceType<T>; error?: Error };
+    declare static validate: <T extends typeof ZodySchema>(this: T, input: unknown) => input is InstanceType<T>;
+    declare static toZod: <T extends typeof ZodySchema>(this: T) => Validator<InstanceType<T>>;
+    declare static defs: (includeSchemaVersion?: boolean) => Record<string, unknown>;
+}
+
 const baseDecorator = makeDecorator({ ops: [] });
 
-export const z: unknown = baseDecorator;
+type ZNamespace = DecoratorFn & {
+    // biome-ignore lint/style/useNamingConvention: must match the actual runtime property name `z.Schema`
+    Schema: typeof Schema;
+    toZod<T extends Ctor>(ctor: T): Validator<unknown>;
+};
+
+export const z = baseDecorator as unknown as ZNamespace;
 
 // Add Schema and toZod - keep the lazy getters from makeDecorator for decorators
 Object.defineProperties(z, {
@@ -1207,6 +864,3 @@ export namespace z {
     export type InferInput<T extends Ctor> = InferIn<T>;
     export type InferOutput<T extends Ctor> = InferOut<T>;
 }
-
-// Export error class
-export { ZodyError };

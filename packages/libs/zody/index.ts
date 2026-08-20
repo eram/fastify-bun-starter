@@ -1,12 +1,13 @@
-// Core decorator system
-
+// Codegen toggle
+export { enableCodeGen, isCodeGenEnabled } from './codegen';
 // Parse utilities
 export * from './parse';
 // JSON Schema conversion
 export * from './schema';
 
-// Relocated validator package (functional API)
+// Functional validators
 export * from './validator';
-// Zod-compatible functional namespace
-export * from './zod-namespace';
-export { type ZodyCtor, ZodyError, type ZodyInfer, z } from './zody';
+// Zod-compatible namespace
+export { ZodError, zod } from './zod';
+// Decorator system
+export { type ZodyCtor, ZodyError, type ZodyInfer, ZodySchema, z } from './zody';

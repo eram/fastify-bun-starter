@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>icon component preview</title>
+    <style>
+        .icon {
+            display: inline-block;
+            line-height: 0;
+            padding: 0;
+            margin: 0;
+            outline: none;
+            border: none;
+            background: transparent;
+            font: inherit;
+            color: inherit;
+            text-decoration: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+        }
+
+        .icon:focus-visible svg {
+            box-shadow: 0 0 0 2px rgba(128, 128, 128, 0.3);
+        }
+
+        .icon[role="button"]:hover svg {
+            filter: brightness(1.2) contrast(1.05);
+            transform: scale(1.05);
+        }
+
+        .icon[role="button"]:active svg {
+            transform: scale(0.95);
+        }
+
+        .icon svg {
+            width: 20px;
+            height: 20px;
+            display: block;
+            transition: var(--transition-base);
+        }
+
+        .icon .icon-bg {
+            fill: var(--card-bg);
+            stroke: var(--border-color);
+            stroke-width: 1px;
+            transition: var(--transition-base);
+        }
+
+        .icon .icon-text {
+            fill: var(--body-color);
+            transition: var(--transition-base);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .icon:focus-visible svg {
+                box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
+            }
+        }
+
+        html[color-scheme="dark"] .icon:focus-visible svg {
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="preview"></div>
+    <script type="module" src="./index.ts"></script>
+</body>
+
+</html>

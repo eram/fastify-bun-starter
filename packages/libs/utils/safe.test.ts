@@ -134,12 +134,14 @@ describe('safe', () => {
             txt: string;
         };
 
-        const fn = spyOn(globalThis, 'fetch').mockImplementation(async (_input: string | URL, _init?: RequestInit) => {
-            return new Response(JSON.stringify({ id: 1, txt: 'test' }), {
-                status: 200,
-                headers: { 'Content-Type': 'application/json' },
-            });
-        });
+        const fn = spyOn(globalThis, 'fetch').mockImplementation(((_input: string | URL, _init?: RequestInit) => {
+            return Promise.resolve(
+                new Response(JSON.stringify({ id: 1, txt: 'test' }), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                }),
+            );
+        }) as unknown as typeof fetch);
 
         try {
             const [res, err] = await safe.fetch('https://zibzib/1');
@@ -188,7 +190,7 @@ describe('safe', () => {
             expect(readdirErr).toBe(undefined);
             expect(Array.isArray(entries)).toBeTruthy();
             expect(entries![0] instanceof Dirent).toBeTruthy();
-            expect(entries![0].isDirectory()).toBeTruthy();
+            expect(entries![0]!.isDirectory()).toBeTruthy();
         } finally {
             await safe.rimraf(folder);
         }
@@ -211,7 +213,7 @@ describe('safe', () => {
 
         expect(execErr).toBe(undefined);
         expect(output && typeof output === 'object').toBeTruthy();
-        expect(output.stdout.includes('test')).toBeTruthy();
+        expect(output!.stdout.includes('test')).toBeTruthy();
     });
 
     test("readdir returns Buffer[] when encoding is 'buffer'", async () => {
@@ -228,7 +230,7 @@ describe('safe', () => {
             expect(readdirErr).toBe(undefined);
             expect(Array.isArray(files)).toBeTruthy();
             // Bun returns Uint8Array for buffer encoding (Buffer extends Uint8Array)
-            expect(files[0] instanceof Uint8Array || Buffer.isBuffer(files[0])).toBeTruthy();
+            expect(files![0] instanceof Uint8Array || Buffer.isBuffer(files![0])).toBeTruthy();
         } finally {
             await deldir(dir);
         }
@@ -241,7 +243,7 @@ describe('safe', () => {
 
         expect(err).toBe(undefined);
         expect(Buffer.isBuffer(output) || typeof output === 'string').toBeTruthy();
-        const outputStr = output.toString();
+        const outputStr = output!.toString();
         expect(outputStr.includes('test')).toBeTruthy();
     });
 
@@ -302,7 +304,7 @@ describe('safe', () => {
         const [result, err] = safe.spawnSync(cmd, args);
         expect(err).toBe(undefined);
         expect(result).toBeTruthy();
-        expect(result.status).toBe(0);
+        expect(result!.status).toBe(0);
     });
 
     test('Child process spawn works and returns ChildProcess directly', async () => {
@@ -347,7 +349,7 @@ describe('safe', () => {
         const [data, err] = await safe.safe(throwString);
         expect(data).toBe(undefined);
         expect(err instanceof Error).toBeTruthy();
-        expect(err.message).toBe('string error');
+        expect(err!.message).toBe('string error');
     });
 
     test('safeSync() handles non-Error thrown values', () => {
@@ -359,7 +361,7 @@ describe('safe', () => {
         const [data, err] = safe.safeSync(throwNumber);
         expect(data).toBe(undefined);
         expect(err instanceof Error).toBeTruthy();
-        expect(err.message).toBe('42');
+        expect(err!.message).toBe('42');
     });
 
     test('safe() rejects invalid input types', async () => {

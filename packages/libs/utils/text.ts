@@ -116,7 +116,7 @@ export function b64urlEncode(str: string) {
     return urlEscape(btoa(str));
 }
 
-export function b64urlDecode(str: string) {
+export function b64urlDecode(str: string): string {
     // Use Buffer in Node.js/Bun, atob in browser
     if (typeof Buffer !== 'undefined') {
         return Buffer.from(urlUnescape(str), 'base64').toString();

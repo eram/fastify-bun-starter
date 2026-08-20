@@ -8,12 +8,12 @@ describe('env', () => {
 
     beforeAll(async () => {
         save = { ...process.env };
-        process.env.NODE_ENV = 'test';
-        process.env.NODE_TEST_CONTEXT ??= 'env';
+        process.env['NODE_ENV'] = 'test';
+        process.env['NODE_TEST_CONTEXT'] ??= 'env';
         const envFile = resolve(Env.__dirname, '.env.development');
         expect(fs.existsSync(envFile)).toBeTruthy();
 
-        process.env.DOT_ENV_FILE = envFile;
+        process.env['DOT_ENV_FILE'] = envFile;
         await Env.init(true); // Force re-initialization
     });
 
@@ -33,13 +33,13 @@ describe('env', () => {
 
     test('cover env defaults', () => {
         // Env is already initialized, just check that vars are set
-        expect(typeof process.env.NODE_ENV === 'string').toBeTruthy();
-        expect(typeof process.env.DOT_ENV_FILE === 'string').toBeTruthy();
-        expect(typeof process.env.APP_NAME === 'string').toBeTruthy();
-        expect(typeof process.env.HOSTNAME === 'string').toBeTruthy();
-        expect(typeof process.env.LOG_ADD_TIME === 'string').toBeTruthy();
-        expect(typeof process.env.LOG_LEVEL === 'string').toBeTruthy();
-        expect(typeof process.env.LOG_FORMAT === 'string').toBeTruthy();
+        expect(typeof process.env['NODE_ENV'] === 'string').toBeTruthy();
+        expect(typeof process.env['DOT_ENV_FILE'] === 'string').toBeTruthy();
+        expect(typeof process.env['APP_NAME'] === 'string').toBeTruthy();
+        expect(typeof process.env['HOSTNAME'] === 'string').toBeTruthy();
+        expect(typeof process.env['LOG_ADD_TIME'] === 'string').toBeTruthy();
+        expect(typeof process.env['LOG_LEVEL'] === 'string').toBeTruthy();
+        expect(typeof process.env['LOG_FORMAT'] === 'string').toBeTruthy();
     });
 
     test('cluster and worker detection', () => {
@@ -64,8 +64,8 @@ describe('env', () => {
     });
 
     test('get Env vars with defaults, min, max', () => {
-        process.env.TEST_INT = '123';
-        process.env.TEST_STR = 'hello';
+        process.env['TEST_INT'] = '123';
+        process.env['TEST_STR'] = 'hello';
 
         expect(Env.get('TEST_INT', 0)).toEqual(123);
         expect(Env.get('TEST_INT', 0, 100)).toEqual(123);
@@ -81,20 +81,20 @@ describe('env', () => {
 
     test('get Env var with object default and JSON parsing', () => {
         // Valid JSON
-        process.env.TEST_OBJ = '{"foo":42,"bar":"baz"}';
+        process.env['TEST_OBJ'] = '{"foo":42,"bar":"baz"}';
         const defObj = { foo: 0, bar: '' };
         const result = Env.get('TEST_OBJ', defObj);
         expect(result.foo).toEqual(42);
         expect(result.bar).toEqual('baz');
 
         // Invalid JSON falls back to default
-        process.env.TEST_OBJ = 'not-json';
+        process.env['TEST_OBJ'] = 'not-json';
         const result2 = Env.get('TEST_OBJ', defObj);
         expect(result2.foo).toEqual(0);
         expect(result2.bar).toEqual('');
 
         // No env var returns default
-        delete process.env.TEST_OBJ;
+        delete process.env['TEST_OBJ'];
         const result3 = Env.get('TEST_OBJ', defObj);
         expect(result3.foo).toEqual(0);
         expect(result3.bar).toEqual('');

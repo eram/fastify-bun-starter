@@ -66,15 +66,15 @@ export class LoggerConf {
     /** Log formatter function (json or line) */
     readonly formatter: Formatter;
     /** Application name for logs */
-    readonly app: string;
+    app: string;
 
     constructor({
         scope = this._defName(),
-        level = (process.env.LOG_LEVEL ?? LogLevel.INFO) as LogLevel,
-        addTime = (process.env.LOG_ADD_TIME ?? 'false').toLowerCase() === 'true',
-        formatter = (process.env.LOG_FORMAT ?? (isDebugging() ? 'line' : 'json')).toLowerCase() === 'json' ? jsonFn : lineFn,
+        level = (process.env['LOG_LEVEL'] ?? LogLevel.INFO) as LogLevel,
+        addTime = (process.env['LOG_ADD_TIME'] ?? 'false').toLowerCase() === 'true',
+        formatter = (process.env['LOG_FORMAT'] ?? (isDebugging() ? 'line' : 'json')).toLowerCase() === 'json' ? jsonFn : lineFn,
         chalkFn = styleText,
-        app = process.env.APP_NAME ?? pkg.name ?? path.basename(process.execPath),
+        app = process.env['APP_NAME'] ?? pkg.name ?? path.basename(process.execPath),
     }: LoggerOptions = {}) {
         this.scope = scope;
         this.level = LoggerConf._normalizeLevel(level);
@@ -86,7 +86,7 @@ export class LoggerConf {
     }
 
     private _defName() {
-        const name = process.env.LOG_NAME ?? process.env.LOGNAME;
+        const name = process.env['LOG_NAME'] ?? process.env['LOGNAME'];
         return name || `${process.pid}:${cluster.isWorker ? (cluster.worker?.id ?? 'worker') : 'main'}`;
     }
 
@@ -171,6 +171,22 @@ function scoped(this: Logger, sub: string, level?: LogLevel): Logger {
     return createLogger(fullName, level, this);
 }
 
+// [propName, level, useErrorFn, chalkColor] - drives the per-level method binding in createLogger
+const LEVEL_BINDINGS: [keyof Logger, LogLevel, boolean, Chalk][] = [
+    ['log', LogLevel.INFO, false, 'blue'],
+    ['error', LogLevel.ERROR, true, 'red'],
+    ['warn', LogLevel.WARNING, false, 'yellow'],
+    ['info', LogLevel.INFO, false, 'blue'],
+    ['debug', LogLevel.DEBUG, false, 'grey'],
+    ['trace', LogLevel.DEBUG, false, 'grey'],
+    ['emerg', LogLevel.EMERGENCY, true, 'red'],
+    ['alert', LogLevel.ALERT, true, 'red'],
+    ['crit', LogLevel.CRITICAL, true, 'red'],
+    ['critical', LogLevel.CRITICAL, true, 'red'],
+    ['warning', LogLevel.WARNING, false, 'yellow'],
+    ['notice', LogLevel.NOTICE, false, 'blue'],
+];
+
 /**
  * Creates a logger instance with the specified name, log level, and base logger.
  * Returns a logger object with methods for each log level.
@@ -208,22 +224,13 @@ export function createLogger(
 
     // create the logger object from the console (for non-logging funcs) and baseLogger.
     // bind all logging functions to the selected log function with defined parameters.
-    logger = Object.assign({}, console, base, {
-        log: conf.formatter.bind(conf, LogLevel.INFO, log, 'blue'),
-        error: conf.formatter.bind(conf, LogLevel.ERROR, error, 'red'),
-
-        warn: conf.formatter.bind(conf, LogLevel.WARNING, log, 'yellow'),
-        info: conf.formatter.bind(conf, LogLevel.INFO, log, 'blue'),
-        debug: conf.formatter.bind(conf, LogLevel.DEBUG, log, 'grey'),
-        trace: conf.formatter.bind(conf, LogLevel.DEBUG, log, 'grey'),
-
-        emerg: conf.formatter.bind(conf, LogLevel.EMERGENCY, error, 'red'),
-        alert: conf.formatter.bind(conf, LogLevel.ALERT, error, 'red'),
-        crit: conf.formatter.bind(conf, LogLevel.CRITICAL, error, 'red'),
-        critical: conf.formatter.bind(conf, LogLevel.CRITICAL, error, 'red'),
-        warning: conf.formatter.bind(conf, LogLevel.WARNING, log, 'yellow'),
-        notice: conf.formatter.bind(conf, LogLevel.NOTICE, log, 'blue'),
-
+    const levelFns = Object.fromEntries(
+        LEVEL_BINDINGS.map(([name, lvl, useError, chalk]) => [
+            name,
+            conf.formatter.bind(conf, lvl, useError ? error : log, chalk),
+        ]),
+    );
+    logger = Object.assign({}, console, base, levelFns, {
         assert: assertFn.bind(conf),
         clear: Object(base).flush ?? console.clear, // clear should flush (if exists)
         conf,
@@ -324,12 +331,15 @@ export const { error, warn, info, debug, assert } = logger;
  * Hook Console
  * Shims the global console methods to use the custom logger implementation.
  * Only hooks once per process.
+ * @param appName Optional app/project name to attach to the logger (e.g. the calling app's package.json name),
+ * overriding the default resolved from APP_NAME env or the root package.json.
  */
 
 const consoleHooks = ['debug', 'trace', 'log', 'info', 'warn', 'error'];
 const save = { hooked: false };
 
-export function hookConsole(_logger = logger) {
+export function hookConsole(_logger = logger, appName?: string) {
+    if (appName) _logger.conf.app = appName;
     if (!save.hooked) {
         console.info('[Logger] Hooking console.');
         const con = globalThis.console || require('node:console');

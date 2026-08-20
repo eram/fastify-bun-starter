@@ -100,7 +100,7 @@ async function main() {
 
     const { performance } = await import('node:perf_hooks');
     const { hostname } = await import('node:os');
-    const { createLogger, SpeedStd } = await import('../src/util/logger.ts');
+    const { createLogger, SpeedStd } = await import('../packages/libs/utils/logger.ts');
 
     function randomLine(minLen = LT_MIN_LINE_LENGTH, maxLen = LT_MAX_LINE_LENGTH) {
         const len = Math.floor(Math.random() * (maxLen - minLen + 1)) + minLen;

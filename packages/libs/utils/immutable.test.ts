@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { number, object, string } from '@libs/zody';
+import { number, object, parseValidate, safeParseValidate, string } from '@libs/zody';
 import { type Dict, Immutable, is, isEmpty, replacerFn, reviverFn, type Union } from './immutable';
 
 // ============================================================================
@@ -115,8 +115,8 @@ describe('Immutable tests', () => {
         // Basic JSON parsing
         const obj = Immutable.parse('{"x": 10, "y": 20}');
         expect(Object.isFrozen(obj)).toBeTruthy();
-        expect(obj?.x).toBe(10);
-        expect(obj?.y).toBe(20);
+        expect(obj?.['x']).toBe(10);
+        expect(obj?.['y']).toBe(20);
 
         // Invalid JSON throws
         expect(() => Immutable.parse('{not valid json')).toThrow();
@@ -124,27 +124,27 @@ describe('Immutable tests', () => {
         // BigInt roundtrip
         const bigintObj = { a: 1n, b: 2 };
         const parsed = Immutable.parse(JSON.stringify(bigintObj, replacerFn));
-        expect(typeof parsed?.a).toBe('bigint');
-        expect(parsed?.a).toBe(1n);
-        expect(parsed?.b).toBe(2);
+        expect(typeof parsed?.['a']).toBe('bigint');
+        expect(parsed?.['a']).toBe(1n);
+        expect(parsed?.['b']).toBe(2);
 
         // Custom reviver
         const customParsed = Immutable.parse('{"a": 1, "b": 2}', (_k: string, v: unknown) =>
             typeof v === 'number' ? v * 10 : v,
         );
-        expect(customParsed?.a).toBe(10);
-        expect(customParsed?.b).toBe(20);
+        expect(customParsed?.['a']).toBe(10);
+        expect(customParsed?.['b']).toBe(20);
 
         // Prototype pollution protection
         const polluted = Immutable.parse('{"__proto__":{"evil":true}}');
         expect(!Object.hasOwn(polluted, 'evil')).toBeTruthy();
-        expect(!polluted?.evil).toBeTruthy();
+        expect(!polluted?.['evil']).toBeTruthy();
 
         // Mutating methods are undefined
-        expect(obj?.set).toBe(undefined);
-        expect(obj?.deleteProperty).toBe(undefined);
-        expect(obj?.push).toBe(undefined);
-        expect(obj?.pop).toBe(undefined);
+        expect(obj?.['set']).toBe(undefined);
+        expect(obj?.['deleteProperty']).toBe(undefined);
+        expect(obj?.['push']).toBe(undefined);
+        expect(obj?.['pop']).toBe(undefined);
     });
 
     test('parse() - ArrayBuffer and SharedArrayBuffer support', () => {
@@ -189,7 +189,7 @@ describe('Immutable tests', () => {
         // Custom reviver
         const [data4, err4] = Immutable.safeParse('{"a": 1}', (_k: string, v: unknown) => (typeof v === 'number' ? v * 10 : v));
         expect(err4).toBe(undefined);
-        expect(data4?.a).toBe(10);
+        expect(data4?.['a']).toBe(10);
 
         // SharedArrayBuffer
         const encoded = new TextEncoder().encode('{"x": 100}');
@@ -204,25 +204,25 @@ describe('Immutable tests', () => {
         const schema = object({ name: string().min(3), age: number().int().positive() });
 
         // Valid data
-        const data = Immutable.parseValidate(schema, '{"name": "John", "age": 30}');
+        const data = parseValidate(schema, '{"name": "John", "age": 30}');
         expect(data.name).toBe('John');
         expect(data.age).toBe(30);
         expect(Object.isFrozen(data)).toBeTruthy();
 
         // Validation error
-        expect(() => Immutable.parseValidate(object({ name: string().min(5) }), '{"name": "Bob"}')).toThrow();
+        expect(() => parseValidate(object({ name: string().min(5) }), '{"name": "Bob"}')).toThrow();
 
         // Invalid JSON
-        expect(() => Immutable.parseValidate(schema, '{not valid json')).toThrow();
+        expect(() => parseValidate(schema, '{not valid json')).toThrow();
 
         // Type coercion
-        const coerced = Immutable.parseValidate(schema, '{"name": "Charlie", "age": "35"}');
+        const coerced = parseValidate(schema, '{"name": "Charlie", "age": "35"}');
         expect(typeof coerced.age).toBe('number');
         expect(coerced.age).toBe(35);
 
         // Custom reviver
         const customSchema = object({ name: string(), value: number() });
-        const custom = Immutable.parseValidate(customSchema, '{"name": "Test", "value": 5}', (_k: string, v: unknown) =>
+        const custom = parseValidate(customSchema, '{"name": "Test", "value": 5}', (_k: string, v: unknown) =>
             typeof v === 'number' ? v * 10 : v,
         );
         expect(custom.value).toBe(50);
@@ -231,7 +231,7 @@ describe('Immutable tests', () => {
         const encoded = new TextEncoder().encode('{"name": "Test", "age": 25}');
         const buf = new SharedArrayBuffer(encoded.byteLength);
         new Uint8Array(buf).set(encoded);
-        const bufData = Immutable.parseValidate(schema, buf);
+        const bufData = parseValidate(schema, buf);
         expect(bufData.name).toBe('Test');
         expect(Object.isFrozen(bufData)).toBeTruthy();
     });
@@ -240,19 +240,19 @@ describe('Immutable tests', () => {
         const schema = object({ name: string().min(3), age: number().int().positive() });
 
         // Success case
-        const [data1, err1] = Immutable.safeParseValidate(schema, '{"name": "Alice", "age": 25}');
+        const [data1, err1] = safeParseValidate(schema, '{"name": "Alice", "age": 25}');
         expect(err1).toBe(undefined);
         expect(data1?.name).toBe('Alice');
         expect(data1?.age).toBe(25);
         expect(Object.isFrozen(data1)).toBeTruthy();
 
         // Validation failure
-        const [data2, err2] = Immutable.safeParseValidate(object({ name: string().min(5) }), '{"name": "Bob"}');
+        const [data2, err2] = safeParseValidate(object({ name: string().min(5) }), '{"name": "Bob"}');
         expect(data2).toBe(undefined);
         expect(err2 instanceof Error).toBeTruthy();
 
         // Invalid JSON
-        const [data3, err3] = Immutable.safeParseValidate(schema, '{not valid json');
+        const [data3, err3] = safeParseValidate(schema, '{not valid json');
         expect(data3).toBe(undefined);
         expect(err3 instanceof Error).toBeTruthy();
 
@@ -260,7 +260,7 @@ describe('Immutable tests', () => {
         const encoded = new TextEncoder().encode('{"name": "Test", "age": 30}');
         const buf = new SharedArrayBuffer(encoded.byteLength);
         new Uint8Array(buf).set(encoded);
-        const [data4, err4] = Immutable.safeParseValidate(schema, buf);
+        const [data4, err4] = safeParseValidate(schema, buf);
         expect(err4).toBe(undefined);
         expect(data4?.name).toBe('Test');
     });
@@ -381,7 +381,7 @@ describe('reviverFn and replacerFn', () => {
         const obj: Dict = {};
         const malicious = JSON.parse('{"__proto__": {"isAdmin": true}}', reviverFn);
         Object.assign(obj, malicious);
-        expect(!obj.isAdmin).toBeTruthy();
+        expect(!obj['isAdmin']).toBeTruthy();
     });
 
     test('reviverFn filters __ properties', () => {

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>theme-toggle component preview</title>
+    <style>
+        .theme-switch-container {
+            width: 38px;
+            height: 24px;
+            overflow: hidden;
+            line-height: 0;
+            --bg: var(--card-bg);
+            --fg: var(--body-color);
+            --border: var(--border-color);
+        }
+
+        .theme-switch-container .theme-switch-button {
+            display: flex;
+            height: 24px;
+            width: 38px;
+            align-items: center;
+            padding: 0;
+            margin: 0;
+            position: relative;
+            outline: none;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            line-height: 0;
+            font: inherit;
+            color: inherit;
+            text-decoration: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+        }
+
+        .theme-switch-container .theme-switch-button:focus-visible .track {
+            box-shadow: 0 0 0 2px var(--border);
+        }
+
+        .theme-switch-container .track {
+            height: 12px;
+            width: 100%;
+            background: var(--border);
+            margin: 0 1px;
+            border-radius: var(--border-radius-full);
+        }
+
+        .theme-switch-container .thumb {
+            width: 20px;
+            height: 20px;
+            position: absolute;
+            left: 0;
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg);
+            transition: var(--transition-base);
+            cursor: pointer;
+        }
+
+        .theme-switch-container .thumb:hover {
+            filter: brightness(1.2) contrast(1.05);
+            transform: scale(1.05);
+        }
+
+        .theme-switch-container .thumb:active {
+            transform: scale(0.95);
+        }
+
+        .theme-switch-container .theme-switch-button[aria-pressed="true"] .thumb {
+            transform: translateX(18px);
+        }
+
+        .theme-switch-container .theme-switch-button[aria-pressed="true"] .thumb:hover {
+            transform: translateX(18px) scale(1.05);
+        }
+
+        .theme-switch-container .theme-switch-button[aria-pressed="true"] .thumb:active {
+            transform: translateX(18px) scale(0.95);
+        }
+
+        .theme-switch-container .theme-icon {
+            width: 12px;
+            height: 12px;
+            color: var(--fg);
+            overflow: visible;
+        }
+
+        .theme-switch-container .sun-ray {
+            transition: var(--transition-base);
+            transform-origin: center;
+            opacity: 1;
+        }
+
+        .theme-switch-container .moon {
+            transition: var(--transition-base);
+            opacity: 0;
+            transform: scale(0);
+            transform-origin: center;
+        }
+
+        .theme-switch-container .theme-switch-button[aria-pressed="true"] .sun-ray {
+            opacity: 0;
+            transform: scale(0);
+        }
+
+        .theme-switch-container .theme-switch-button[aria-pressed="true"] .moon {
+            opacity: 1;
+            transform: scale(1);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="preview"></div>
+    <script type="module" src="./index.ts"></script>
+</body>
+
+</html>

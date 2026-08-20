@@ -4,8 +4,8 @@
 // Usage examples:
 //    bun run script/run-tests.ts                     - runs all tests with quiet output (only errors and summary)
 //    bun run script/run-tests.ts --verbose           - runs all tests with full verbose output
-//    bun run script/run-tests.ts --port 4000         - runs all tests on port 4000 (default: 13582)
-//    bun run script/run-tests.ts src/util            - runs specific test files with verbose output
+//    bun run script/run-tests.ts --port 4321         - runs all tests on port 4321 (default: 13582)
+//    bun run script/run-tests.ts packages/libs/utils  - runs specific test files with verbose output
 //
 
 import { spawn } from 'node:child_process';
@@ -32,7 +32,7 @@ const { values, positionals } = parseArgs({
 });
 
 const hasSpecificFiles = positionals.length > 0;
-const filesToTest = positionals.length > 0 ? positionals : ['src'];
+const filesToTest = positionals.length > 0 ? positionals : ['apps', 'packages'];
 let verbose = values.verbose || hasSpecificFiles;
 let buffer = '';
 const start = Date.now();

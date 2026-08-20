@@ -39,7 +39,8 @@
             "maxAllowedComplexity": 50
           }
         },
-        "noVoid": "error"
+        "noVoid": "error",
+        "useLiteralKeys": "off"
       },
       "correctness": {
         "noConstantCondition": "off",

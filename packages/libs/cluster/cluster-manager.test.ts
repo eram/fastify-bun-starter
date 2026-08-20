@@ -74,7 +74,7 @@ describe('ClusterManager', () => {
     });
 
     test('should accept custom configuration', async () => {
-        const { createLogger } = await import('../../utils/logger');
+        const { createLogger } = await import('../utils/logger');
         const customLogger = createLogger('TestCluster', 'DEBUG');
 
         const manager = new ClusterManager({
@@ -113,7 +113,7 @@ describe('ClusterManager', () => {
 
         try {
             await manager.startPrimary().catch((err) => {
-                expect(err.message.includes('only be called in primary process').toBeTruthy());
+                expect(err.message.includes('only be called in primary process')).toBeTruthy();
             });
         } finally {
             // Restore original property
@@ -135,7 +135,7 @@ describe('ClusterManager', () => {
 
         try {
             await manager.shutdown().catch((err) => {
-                expect(err.message.includes('only be called in primary process').toBeTruthy());
+                expect(err.message.includes('only be called in primary process')).toBeTruthy();
             });
         } finally {
             // Restore original property
@@ -157,7 +157,7 @@ describe('ClusterManager', () => {
 
         try {
             await manager.startWorker().catch((err) => {
-                expect(err.message.includes('only be called in worker process').toBeTruthy());
+                expect(err.message.includes('only be called in worker process')).toBeTruthy();
             });
         } finally {
             // Restore original property
@@ -199,7 +199,7 @@ describe('ClusterManager', () => {
     });
 
     test('should handle configuration with all options', async () => {
-        const { createLogger } = await import('../../utils/logger');
+        const { createLogger } = await import('../utils/logger');
         const customLogger = createLogger('TestCluster', 'DEBUG');
 
         const manager = new ClusterManager({
@@ -412,7 +412,7 @@ describe('ClusterManager', () => {
     });
 
     test('should use custom logger', async () => {
-        const { createLogger } = await import('../../utils/logger');
+        const { createLogger } = await import('../utils/logger');
         const customLogger = createLogger('CustomCluster', 'DEBUG');
 
         const manager = new ClusterManager({
@@ -424,7 +424,7 @@ describe('ClusterManager', () => {
     });
 
     test('should use different log levels', async () => {
-        const { createLogger } = await import('../../utils/logger');
+        const { createLogger } = await import('../utils/logger');
 
         const loggers = [
             createLogger('Test1', 'DEBUG'),
@@ -469,7 +469,7 @@ describe('ClusterManager', () => {
             return cluster;
         }) as typeof cluster.on;
 
-        const { createLogger } = await import('../../utils/logger');
+        const { createLogger } = await import('../utils/logger');
         const manager = new ClusterManager({
             file: './worker.js',
             workers: 2,
@@ -510,7 +510,7 @@ describe('ClusterManager', () => {
             return cluster;
         }) as typeof cluster.on;
 
-        const { createLogger } = await import('../../utils/logger');
+        const { createLogger } = await import('../utils/logger');
         const manager = new ClusterManager({
             file: './worker.js',
             workers: 1,
@@ -568,7 +568,7 @@ describe('ClusterManager', () => {
         }) as typeof process.exit;
 
         try {
-            const { createLogger } = await import('../../utils/logger');
+            const { createLogger } = await import('../utils/logger');
             const manager = new ClusterManager({
                 file: './worker.js',
                 workers: 1,
@@ -624,7 +624,7 @@ describe('ClusterManager', () => {
             return cluster;
         }) as typeof cluster.on;
 
-        const { createLogger } = await import('../../utils/logger');
+        const { createLogger } = await import('../utils/logger');
         const manager = new ClusterManager({
             file: './worker.js',
             workers: 1,
@@ -653,7 +653,7 @@ describe('ClusterManager', () => {
             configurable: true,
         });
 
-        const { createLogger } = await import('../../utils/logger');
+        const { createLogger } = await import('../utils/logger');
         const manager = new ClusterManager({
             file: './worker.js',
             logger: createLogger('TestCluster', 'ERROR'),
@@ -667,7 +667,7 @@ describe('ClusterManager', () => {
     });
 
     test('should call shutdown() method when available', async () => {
-        const { createLogger } = await import('../../utils/logger');
+        const { createLogger } = await import('../utils/logger');
 
         const manager = new ClusterManager({
             file: './__mocks__/simple-worker.ts',
@@ -680,7 +680,7 @@ describe('ClusterManager', () => {
         // Should throw error when called in non-primary mode (before startPrimary)
         await manager.shutdown().catch((err) => {
             expect(err instanceof Error).toBeTruthy();
-            expect(err.message.includes('primary process').toBeTruthy());
+            expect(err.message.includes('primary process')).toBeTruthy();
         });
     });
 
@@ -708,7 +708,7 @@ describe('ClusterManager', () => {
             return cluster;
         }) as typeof cluster.on;
 
-        const { createLogger } = await import('../../utils/logger');
+        const { createLogger } = await import('../utils/logger');
         const manager = new ClusterManager({
             file: './worker.js',
             workers: 2,
@@ -765,7 +765,7 @@ describe('ClusterManager', () => {
 
         cluster.on = (() => cluster) as typeof cluster.on;
 
-        const { createLogger } = await import('../../utils/logger');
+        const { createLogger } = await import('../utils/logger');
         const manager = new ClusterManager({
             file: './worker.js',
             workers: 1,
@@ -780,8 +780,8 @@ describe('ClusterManager', () => {
         // biome-ignore lint/complexity/noVoid: intentionally not awaiting to test timeout
         void manager.shutdown();
 
-        // Don't emit exit - let it timeout and force SIGKILL
-        await sleep(20);
+        // Don't emit exit - let it timeout and force SIGKILL (shutdownTimeout above is 100ms)
+        await sleep(150);
 
         expect(killedWorkers.length > 0, 'Should have force-killed workers after timeout').toBeTruthy();
     });
@@ -813,7 +813,7 @@ describe('ClusterManager', () => {
             return cluster;
         }) as typeof cluster.on;
 
-        const { createLogger } = await import('../../utils/logger');
+        const { createLogger } = await import('../utils/logger');
         const manager = new ClusterManager({
             file: './worker.js',
             workers: 1,
@@ -862,7 +862,7 @@ describe('ClusterManager', () => {
 
         cluster.on = (() => cluster) as typeof cluster.on;
 
-        const { createLogger } = await import('../../utils/logger');
+        const { createLogger } = await import('../utils/logger');
         const manager = new ClusterManager({
             file: './worker.js',
             workers: 1,
@@ -898,7 +898,7 @@ describe('ClusterManager', () => {
 
         cluster.on = (() => cluster) as typeof cluster.on;
 
-        const { createLogger } = await import('../../utils/logger');
+        const { createLogger } = await import('../utils/logger');
         const manager = new ClusterManager({
             file: './worker.js',
             workers: 1,
@@ -921,7 +921,7 @@ describe('ClusterManager', () => {
             configurable: true,
         });
 
-        const { createLogger } = await import('../../utils/logger');
+        const { createLogger } = await import('../utils/logger');
         const manager = new ClusterManager({
             file: './non-existent-worker.js',
             logger: createLogger('TestCluster', 'ERROR'),
