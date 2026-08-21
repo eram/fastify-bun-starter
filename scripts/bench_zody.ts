@@ -1,512 +1,275 @@
 /***
- * Validator Benchmark: Stage 1 Decorators (Compiled) vs Zod Functional (Interpreted)
- * ===================================================================================
+ * Validator Benchmark: real zod/v4 vs zody (functional + decorator surfaces)
+ * ===========================================================================
  *
- * Compares two validation approaches:
- * 1. Decorators with closure compilation (Stage 1 — optimized)
- * 2. Zod functional interface without compilation (baseline — interpreted)
+ * Compares four validation paths against two datasets:
+ *
+ *   1. zod/v4          - the actual npm `zod` package (v4), used as the baseline.
+ *   2. zody/zod         - @libs/zody's zod-compatible functional namespace (`zod`),
+ *                         always interpreted (no self-compilation).
+ *   3. zody/z (no jit)  - @libs/zody's `.validate()` boolean surface with codegen
+ *                         disabled (`enableCodeGen(false)`) - interpreted path.
+ *   4. zody/z (jit)     - the same `.validate()` surface with codegen enabled
+ *                         (default) - self-compiles to a `new Function(...)`-backed
+ *                         fast path on first call.
  *
  * Test Scenarios:
- *   1. Simple Object (Reused Schema) - Schema created once, parse many times
- *   2. Complex Nested Object (Reused Schema) - Deep validation with multiple types
- *   3. Create Once Pattern - Schema created and used once (React component pattern)
- *   4. Array of Objects - Collection validation performance
- *
- * Key Questions:
- *   - Is Stage 1 compilation worth the complexity?
- *   - How much faster is compiled closure validation vs interpreted functional?
- *   - Is the overhead of decorator class creation offset by compiled performance?
+ *   A. Small schema - 10 fields, each an enum of 3 string literals - 10,000 validations.
+ *   B. Complex schema - MCP's `CallToolResult` (dereferenced from
+ *      packages/libs/zody/__mocks__/mcp-schema.json), a nested union-of-5-variants
+ *      content-block schema - 1,000 validations.
  *
  * Usage:
- *   node --expose-gc scripts/bench_validator.js
- *
- * Benchmark Design:
- *   - Uses GC cleanup between tests
- *   - Measures time in ms and memory in MB
- *   - Tests with realistic data sizes (100k-1M validations)
- *   - Includes both valid and invalid data scenarios
+ *   bun --expose-gc scripts/bench_zody.ts
+ * 
+ * Results 260821
+ * ┌───┬────────────────────────────────┬─────────┬────────┬─────────┬──────────────┐
+ * │   │ test                           │ time    │ mem MB │ ops/ms  │ successCount │
+ * ├───┼────────────────────────────────┼─────────┼────────┼─────────┼──────────────┤
+ * │ 0 │ Decorator (simple, compiled)   │ 112.36  │ 0      │ 8899.69 │ 1000000      │
+ * │ 1 │ Zod (simple, interpreted)      │ 148.9   │ 0      │ 6715.74 │ 1000000      │
+ * │ 2 │ Decorator (codegen ON)         │ 138.35  │ 0      │ 7227.92 │ 1000000      │
+ * │ 3 │ Decorator (codegen OFF)        │ 236.94  │ 0      │ 4220.45 │ 1000000      │
+ * │ 4 │ Decorator (complex, compiled)  │ 167.16  │ 0      │ 5982.17 │ 1000000      │
+ * │ 5 │ Zod (complex, interpreted)     │ 787.47  │ 0      │ 1269.89 │ 1000000      │
+ * │ 6 │ Decorator (create once)        │ 13.16   │ 0      │ 7600.81 │ 100000       │
+ * │ 7 │ Zod (create once, interpreted) │ 22.01   │ 0      │ 4543.66 │ 100000       │
+ * │ 8 │ Decorator (array, compiled)    │ 72.3    │ 0      │ 13.83   │ 1000         │
+ * │ 9 │ Zod (array, interpreted)       │ 1925.22 │ 0      │ 0.52    │ 1000         │
+ * └───┴────────────────────────────────┴─────────┴────────┴─────────┴──────────────┘
  *
  ***/
 
+import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { z as zodV4 } from 'zod';
 
-const ITERATIONS_REUSED = 1000000; // Parse same schema many times
-const ITERATIONS_ONCE = 100000; // Create schema + parse once (React component pattern)
-const ARRAY_SIZE = 10000; // Items in array validation test
+// biome-ignore lint/suspicious/noExplicitAny: benchmark script - schemas are dynamically shaped
+type AnyZodV4 = any;
+// biome-ignore lint/suspicious/noExplicitAny: benchmark script - zody validators are dynamically shaped
+type AnyZody = any;
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const ITERATIONS_SMALL = 10000;
+const ITERATIONS_COMPLEX = 1000;
+const FIELD_COUNT = 10;
 
 const r = (n: number) => Math.round(n * 100) / 100;
 
-// Generate random test data
-function generateUser(id: number) {
-    return {
-        id,
-        name: `User${id}`,
-        email: `user${id}@example.com`,
-        age: 18 + (id % 50),
-        isActive: id % 2 === 0,
-        profile: {
-            bio: `Bio for user ${id}`.repeat(3),
-            website: `https://user${id}.example.com`,
-            location: {
-                city: ['NYC', 'SF', 'LA', 'Seattle', 'Boston'][id % 5],
-                country: 'USA',
-                coordinates: {
-                    lat: 37.7749 + (id % 100) * 0.01,
-                    lng: -122.4194 + (id % 100) * 0.01,
-                },
-            },
-        },
-        tags: ['tag1', 'tag2', 'tag3'].slice(0, (id % 3) + 1),
-        metadata: {
-            createdAt: new Date().toISOString(),
-            lastLogin: new Date().toISOString(),
-            loginCount: id * 10,
-        },
-    };
+interface BenchResult {
+    time: number;
+    'mem MB': number;
+    'ops/ms': number;
+    successCount: number;
 }
 
-//----------------------------------------------------------------
-// Test 1: Simple Object (Reused Schema)
-//----------------------------------------------------------------
-
-async function benchDecoratorSimple() {
-    const { z } = await import('@libs/zody');
-
-    @z.Schema({ autocompile: true })
-    class SimpleUser {
-        @z.int id!: number;
-        @z.string name!: string;
-        @z.string.email email!: string;
-    }
-    // TypeScript's class-decorator return-type mutation doesn't propagate to the
-    // decorated class's static type, so the added `validate` static needs a cast.
-    const SimpleUserModel = SimpleUser as unknown as { validate(input: unknown): boolean };
-
-    // Wait for autocompile to finish
-    await new Promise((resolve) => setImmediate(resolve));
-
-    const testData = Array.from({ length: ITERATIONS_REUSED }, (_, i) => ({
-        id: i,
-        name: `User${i}`,
-        email: `user${i}@example.com`,
-    }));
-
+async function timeLoop<T>(dataset: T[], validateFn: (item: T) => boolean): Promise<BenchResult> {
     if (global.gc) global.gc();
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     const mem0 = process.memoryUsage().heapUsed;
     const t0 = performance.now();
 
     let successCount = 0;
-    for (const data of testData) {
-        if (SimpleUserModel.validate(data)) successCount++;
+    for (const item of dataset) {
+        if (validateFn(item)) successCount++;
     }
 
     const time = performance.now() - t0;
     const mem = (process.memoryUsage().heapUsed - mem0) / 1024 / 1024;
 
-    return {
-        time: r(time),
-        'mem MB': r(mem),
-        'ops/ms': r(ITERATIONS_REUSED / time),
-        successCount,
-    };
+    return { time: r(time), 'mem MB': r(mem), 'ops/ms': r(dataset.length / time), successCount };
 }
 
 //----------------------------------------------------------------
-// Test 1b: Decorator validate() with codegen enabled vs disabled
+// Dataset A: Small schema - 10 fields x 3-literal enum each
 //----------------------------------------------------------------
 
-async function benchDecoratorCodeGen(enabled: boolean) {
-    const { z, enableCodeGen } = await import('@libs/zody');
-    enableCodeGen(enabled);
+const LITERAL_SETS = Array.from({ length: FIELD_COUNT }, (_, i) => [`f${i}-a`, `f${i}-b`, `f${i}-c`] as const);
 
-    @z.Schema({ autocompile: enabled })
-    class CodeGenUser {
-        @z.int id!: number;
-        @z.string name!: string;
-        @z.string.email email!: string;
+function buildSmallSchemaZodV4() {
+    const shape: Record<string, AnyZodV4> = {};
+    for (const [i, opts] of LITERAL_SETS.entries()) {
+        shape[`field${i}`] = zodV4.enum(opts);
     }
-    const CodeGenUserModel = CodeGenUser as unknown as { validate(input: unknown): boolean };
-
-    if (enabled) await new Promise((resolve) => setImmediate(resolve));
-
-    const testData = Array.from({ length: ITERATIONS_REUSED }, (_, i) => ({
-        id: i,
-        name: `User${i}`,
-        email: `user${i}@example.com`,
-    }));
-
-    if (global.gc) global.gc();
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    const mem0 = process.memoryUsage().heapUsed;
-    const t0 = performance.now();
-
-    let successCount = 0;
-    for (const data of testData) {
-        if (CodeGenUserModel.validate(data)) successCount++;
-    }
-
-    const time = performance.now() - t0;
-    const mem = (process.memoryUsage().heapUsed - mem0) / 1024 / 1024;
-
-    enableCodeGen(true); // reset for subsequent benchmarks
-
-    return {
-        time: r(time),
-        'mem MB': r(mem),
-        'ops/ms': r(ITERATIONS_REUSED / time),
-        successCount,
-    };
+    return zodV4.object(shape);
 }
 
-async function benchZodSimple() {
-    const { zod } = await import('@libs/zody');
-    const { object, int: intV, string: stringV } = zod;
+function buildSmallSchemaZody(zod: AnyZody) {
+    const shape: Record<string, AnyZody> = {};
+    for (const [i, opts] of LITERAL_SETS.entries()) {
+        shape[`field${i}`] = zod.enum(opts);
+    }
+    return zod.object(shape);
+}
 
-    // Create schema once using functional API
-    const schema = object({
-        id: intV(),
-        name: stringV(),
-        email: stringV().email(),
+function generateSmallRecord(i: number): Record<string, string> {
+    const rec: Record<string, string> = {};
+    for (const [idx, opts] of LITERAL_SETS.entries()) {
+        rec[`field${idx}`] = opts[i % 3]!;
+    }
+    return rec;
+}
+
+const smallDataset = Array.from({ length: ITERATIONS_SMALL }, (_, i) => generateSmallRecord(i));
+
+//----------------------------------------------------------------
+// Dataset B: Complex schema - MCP CallToolResult (from mcp-schema.json)
+//----------------------------------------------------------------
+
+// biome-ignore lint/suspicious/noExplicitAny: raw JSON Schema nodes are untyped
+type JsonSchemaNode = Record<string, any>;
+
+/** Inlines every `$ref` in a JSON Schema `definitions` map. No support for cycles - the
+ * MCP schema's subgraph used here (CallToolResult -> ContentBlock -> ...) is a DAG. */
+function derefSchema(node: unknown, defs: Record<string, JsonSchemaNode>, stack: Set<string> = new Set()): unknown {
+    if (node === null || typeof node !== 'object') return node;
+    if (Array.isArray(node)) return node.map((item) => derefSchema(item, defs, stack));
+
+    const obj = node as JsonSchemaNode;
+    if (typeof obj.$ref === 'string') {
+        const key = obj.$ref.replace('#/definitions/', '');
+        if (stack.has(key)) throw new Error(`Cyclic $ref detected in mcp-schema.json: ${key}`);
+        const target = defs[key];
+        if (!target) throw new Error(`Unknown $ref in mcp-schema.json: ${obj.$ref}`);
+        const nextStack = new Set(stack).add(key);
+        const resolved = derefSchema(target, defs, nextStack) as JsonSchemaNode;
+        const { $ref, ...siblings } = obj;
+        return { ...resolved, ...(derefSchema(siblings, defs, stack) as JsonSchemaNode) };
+    }
+
+    const out: JsonSchemaNode = {};
+    for (const [k, v] of Object.entries(obj)) out[k] = derefSchema(v, defs, stack);
+    return out;
+}
+
+const mcpSchemaPath = path.join(__dirname, '../packages/libs/zody/__mocks__/mcp-schema.json');
+const mcpSchemaRaw = JSON.parse(readFileSync(mcpSchemaPath, 'utf8')) as { definitions: Record<string, JsonSchemaNode> };
+const callToolResultJsonSchema = derefSchema(mcpSchemaRaw.definitions.CallToolResult, mcpSchemaRaw.definitions) as JsonSchemaNode;
+
+// Hand-written zod/v4 equivalent of the dereferenced CallToolResult schema above -
+// real zod has no JSON-Schema-to-Zod converter, so this mirrors the same shape by hand.
+function buildComplexSchemaZodV4() {
+    const roleZ = zodV4.enum(['assistant', 'user']);
+    const annotationsZ = zodV4.object({
+        audience: zodV4.array(roleZ).optional(),
+        lastModified: zodV4.string().optional(),
+        priority: zodV4.number().min(0).max(1).optional(),
     });
+    const metaZ = zodV4.object({}).optional();
 
-    const testData = Array.from({ length: ITERATIONS_REUSED }, (_, i) => ({
-        id: i,
-        name: `User${i}`,
-        email: `user${i}@example.com`,
-    }));
+    const textContentZ = zodV4.object({
+        _meta: metaZ,
+        annotations: annotationsZ.optional(),
+        text: zodV4.string(),
+        type: zodV4.literal('text'),
+    });
+    const imageContentZ = zodV4.object({
+        _meta: metaZ,
+        annotations: annotationsZ.optional(),
+        data: zodV4.string(),
+        mimeType: zodV4.string(),
+        type: zodV4.literal('image'),
+    });
+    const audioContentZ = zodV4.object({
+        _meta: metaZ,
+        annotations: annotationsZ.optional(),
+        data: zodV4.string(),
+        mimeType: zodV4.string(),
+        type: zodV4.literal('audio'),
+    });
+    const resourceLinkZ = zodV4.object({
+        _meta: metaZ,
+        annotations: annotationsZ.optional(),
+        description: zodV4.string().optional(),
+        mimeType: zodV4.string().optional(),
+        name: zodV4.string(),
+        size: zodV4.number().int().optional(),
+        title: zodV4.string().optional(),
+        type: zodV4.literal('resource_link'),
+        uri: zodV4.url(),
+    });
+    const textResourceContentsZ = zodV4.object({
+        _meta: metaZ,
+        mimeType: zodV4.string().optional(),
+        text: zodV4.string(),
+        uri: zodV4.url(),
+    });
+    const blobResourceContentsZ = zodV4.object({
+        _meta: metaZ,
+        blob: zodV4.string(),
+        mimeType: zodV4.string().optional(),
+        uri: zodV4.url(),
+    });
+    const embeddedResourceZ = zodV4.object({
+        _meta: metaZ,
+        annotations: annotationsZ.optional(),
+        resource: zodV4.union([textResourceContentsZ, blobResourceContentsZ]),
+        type: zodV4.literal('resource'),
+    });
+    const contentBlockZ = zodV4.union([textContentZ, imageContentZ, audioContentZ, resourceLinkZ, embeddedResourceZ]);
 
-    if (global.gc) global.gc();
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    return zodV4.object({
+        _meta: metaZ,
+        content: zodV4.array(contentBlockZ),
+        isError: zodV4.boolean().optional(),
+        structuredContent: zodV4.object({}).optional(),
+    });
+}
 
-    const mem0 = process.memoryUsage().heapUsed;
-    const t0 = performance.now();
+function randomContentBlock(i: number) {
+    const annotations = i % 2 === 0 ? { audience: ['user'], lastModified: new Date(0).toISOString(), priority: 0.5 } : undefined;
+    switch (i % 5) {
+        case 0:
+            return { type: 'text', text: `Result text ${i}`, annotations };
+        case 1:
+            return { type: 'image', data: 'aGVsbG8=', mimeType: 'image/png', annotations };
+        case 2:
+            return { type: 'audio', data: 'aGVsbG8=', mimeType: 'audio/mpeg', annotations };
+        case 3:
+            return { type: 'resource_link', name: `resource-${i}`, uri: `https://example.com/r/${i}`, annotations };
+        default:
+            return {
+                type: 'resource',
+                resource: { uri: `https://example.com/r/${i}`, text: `resource text ${i}` },
+                annotations,
+            };
+    }
+}
 
-    let successCount = 0;
-    for (const data of testData) {
+function generateCallToolResult(i: number) {
+    return {
+        content: [randomContentBlock(i), randomContentBlock(i + 1), randomContentBlock(i + 2)],
+        isError: i % 10 === 0,
+    };
+}
+
+const complexDataset = Array.from({ length: ITERATIONS_COMPLEX }, (_, i) => generateCallToolResult(i));
+
+//----------------------------------------------------------------
+// Runners
+//----------------------------------------------------------------
+
+async function benchZodV4<T>(schema: AnyZodV4, dataset: T[]) {
+    return timeLoop(dataset, (item) => schema.safeParse(item).success);
+}
+
+async function benchZodyFunctional<T>(schema: AnyZody, dataset: T[]) {
+    return timeLoop(dataset, (item) => {
         try {
-            schema.parse(data);
-            successCount++;
-        } catch (_e) {
-            // Invalid data
+            schema.parse(item);
+            return true;
+        } catch {
+            return false;
         }
-    }
-
-    const time = performance.now() - t0;
-    const mem = (process.memoryUsage().heapUsed - mem0) / 1024 / 1024;
-
-    return {
-        time: r(time),
-        'mem MB': r(mem),
-        'ops/ms': r(ITERATIONS_REUSED / time),
-        successCount,
-    };
-}
-
-//----------------------------------------------------------------
-// Test 2: Complex Nested Object (Reused Schema)
-//----------------------------------------------------------------
-
-async function benchDecoratorComplex() {
-    const { z } = await import('@libs/zody');
-
-    // NOTE: the Stage 1 decorator API only supports primitive roots (string/number/
-    // boolean/bigint/date), arrays of a primitive decorator, and unions — it has no
-    // way to nest another decorated class as a field (no `object` root, no
-    // `array.of(SomeClass)`). Per the project's documented hybrid approach, deeply
-    // nested structures stay on the functional API; this decorator variant validates
-    // only the fields it's actually capable of validating (flat scalars + a string
-    // array), so the "complex" comparison is honest about what Stage 1 covers today.
-    @z.Schema({ autocompile: true })
-    class ComplexUser {
-        @z.int id!: number;
-        @z.string name!: string;
-        @z.string.email email!: string;
-        @(z.number.gte(0).lte(120)) age!: number;
-        @z.boolean isActive!: boolean;
-        @z.array(z.string) tags!: string[];
-    }
-    // TypeScript's class-decorator return-type mutation doesn't propagate to the
-    // decorated class's static type, so the added `validate` static needs a cast.
-    const ComplexUserModel = ComplexUser as unknown as { validate(input: unknown): boolean };
-
-    // Wait for autocompile
-    await new Promise((resolve) => setImmediate(resolve));
-
-    const testData = Array.from({ length: ITERATIONS_REUSED }, (_, i) => generateUser(i));
-
-    if (global.gc) global.gc();
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    const mem0 = process.memoryUsage().heapUsed;
-    const t0 = performance.now();
-
-    let successCount = 0;
-    for (const data of testData) {
-        if (ComplexUserModel.validate(data)) successCount++;
-    }
-
-    const time = performance.now() - t0;
-    const mem = (process.memoryUsage().heapUsed - mem0) / 1024 / 1024;
-
-    return {
-        time: r(time),
-        'mem MB': r(mem),
-        'ops/ms': r(ITERATIONS_REUSED / time),
-        successCount,
-    };
-}
-
-async function benchZodComplex() {
-    const { zod } = await import('@libs/zody');
-    const { object, int: intV, number: numV, string: stringV, boolean: boolV, array } = zod;
-
-    // Create schema once using functional API
-    const schema = object({
-        id: intV(),
-        name: stringV(),
-        email: stringV().email(),
-        age: numV().gte(0).lte(120),
-        isActive: boolV(),
-        profile: object({
-            bio: stringV(),
-            website: stringV(),
-            location: object({
-                city: stringV(),
-                country: stringV(),
-                coordinates: object({
-                    lat: numV(),
-                    lng: numV(),
-                }),
-            }),
-        }),
-        tags: array(stringV()),
-        metadata: object({
-            createdAt: stringV(),
-            lastLogin: stringV(),
-            loginCount: numV(),
-        }),
     });
-
-    const testData = Array.from({ length: ITERATIONS_REUSED }, (_, i) => generateUser(i));
-
-    if (global.gc) global.gc();
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    const mem0 = process.memoryUsage().heapUsed;
-    const t0 = performance.now();
-
-    let successCount = 0;
-    for (const data of testData) {
-        try {
-            schema.parse(data);
-            successCount++;
-        } catch (_e) {
-            // Invalid data
-        }
-    }
-
-    const time = performance.now() - t0;
-    const mem = (process.memoryUsage().heapUsed - mem0) / 1024 / 1024;
-
-    return {
-        time: r(time),
-        'mem MB': r(mem),
-        'ops/ms': r(ITERATIONS_REUSED / time),
-        successCount,
-    };
 }
 
-//----------------------------------------------------------------
-// Test 3: Create Once Pattern
-//----------------------------------------------------------------
-
-async function benchDecoratorCreateOnce() {
-    const { z } = await import('@libs/zody');
-
-    const testData = Array.from({ length: ITERATIONS_ONCE }, (_, i) => generateUser(i));
-
-    // Schema built once, outside the timed loop — a decorated class is meant to be
-    // defined at module scope and reused, not redefined per request/render. Defining
-    // it inside the loop measured class-decoration + first-call codegen-compile cost
-    // on every iteration instead of the steady-state validate() cost this test wants.
-    @z.Schema()
-    class TempUser {
-        @z.int id!: number;
-        @z.string name!: string;
-        @z.string.email email!: string;
-    }
-    // TypeScript's class-decorator return-type mutation doesn't propagate to the
-    // decorated class's static type, so the added `validate` static needs a cast.
-    const TempUserModel = TempUser as unknown as { validate(input: unknown): boolean };
-
-    if (global.gc) global.gc();
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    const mem0 = process.memoryUsage().heapUsed;
-    const t0 = performance.now();
-
-    let successCount = 0;
-    for (const data of testData) {
-        if (TempUserModel.validate(data)) successCount++;
-    }
-
-    const time = performance.now() - t0;
-    const mem = (process.memoryUsage().heapUsed - mem0) / 1024 / 1024;
-
-    return {
-        time: r(time),
-        'mem MB': r(mem),
-        'ops/ms': r(ITERATIONS_ONCE / time),
-        successCount,
-    };
-}
-
-async function benchZodCreateOnce() {
-    const { zod } = await import('@libs/zody');
-    const { object, int: intV, string: stringV } = zod;
-
-    const testData = Array.from({ length: ITERATIONS_ONCE }, (_, i) => generateUser(i));
-
-    // Schema built once, outside the timed loop — see benchDecoratorCreateOnce comment.
-    const schema = object({
-        id: intV(),
-        name: stringV(),
-        email: stringV().email(),
-    });
-
-    if (global.gc) global.gc();
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    const mem0 = process.memoryUsage().heapUsed;
-    const t0 = performance.now();
-
-    let successCount = 0;
-    for (const data of testData) {
-        try {
-            schema.parse(data);
-            successCount++;
-        } catch (_e) {
-            // Invalid data
-        }
-    }
-
-    const time = performance.now() - t0;
-    const mem = (process.memoryUsage().heapUsed - mem0) / 1024 / 1024;
-
-    return {
-        time: r(time),
-        'mem MB': r(mem),
-        'ops/ms': r(ITERATIONS_ONCE / time),
-        successCount,
-    };
-}
-
-//----------------------------------------------------------------
-// Test 4: Array of Objects
-//----------------------------------------------------------------
-
-async function benchDecoratorArray() {
-    const { z } = await import('@libs/zody');
-
-    // NOTE: the Stage 1 decorator API has no way to express "array of another
-    // decorated class" (only `array(primitiveDecorator)` is supported — see
-    // benchDecoratorComplex for details). To keep this a real, running comparison
-    // without inventing unsupported library surface, the decorator variant validates
-    // an array of the users' ids (the one field an array-of-primitive decorator can
-    // express) while the Zod functional variant below validates the full array of
-    // user objects.
-    @z.Schema({ autocompile: true })
-    class UserList {
-        @z.array(z.int) ids!: number[];
-    }
-    // TypeScript's class-decorator return-type mutation doesn't propagate to the
-    // decorated class's static type, so the added `validate` static needs a cast.
-    const UserListModel = UserList as unknown as { validate(input: unknown): boolean };
-
-    // Wait for autocompile
-    await new Promise((resolve) => setImmediate(resolve));
-
-    const testData = Array.from({ length: 1000 }, (_, i) => ({
-        users: Array.from({ length: ARRAY_SIZE }, (_, j) => ({
-            id: i * ARRAY_SIZE + j,
-            name: `User${j}`,
-            email: `user${j}@example.com`,
-        })),
-    }));
-
-    if (global.gc) global.gc();
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    const mem0 = process.memoryUsage().heapUsed;
-    const t0 = performance.now();
-
-    let successCount = 0;
-    for (const data of testData) {
-        if (UserListModel.validate({ ids: data.users.map((u) => u.id) })) successCount++;
-    }
-
-    const time = performance.now() - t0;
-    const mem = (process.memoryUsage().heapUsed - mem0) / 1024 / 1024;
-
-    return {
-        time: r(time),
-        'mem MB': r(mem),
-        'ops/ms': r(1000 / time),
-        successCount,
-    };
-}
-
-async function benchZodArray() {
-    const { zod } = await import('@libs/zody');
-    const { object, int: intV, string: stringV, array } = zod;
-
-    // Create schema once
-    const userSchema = object({
-        id: intV(),
-        name: stringV(),
-        email: stringV().email(),
-    });
-
-    const schema = object({
-        users: array(userSchema),
-    });
-
-    const testData = Array.from({ length: 1000 }, (_, i) => ({
-        users: Array.from({ length: ARRAY_SIZE }, (_, j) => ({
-            id: i * ARRAY_SIZE + j,
-            name: `User${j}`,
-            email: `user${j}@example.com`,
-        })),
-    }));
-
-    if (global.gc) global.gc();
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    const mem0 = process.memoryUsage().heapUsed;
-    const t0 = performance.now();
-
-    let successCount = 0;
-    for (const data of testData) {
-        try {
-            schema.parse(data);
-            successCount++;
-        } catch (_e) {
-            // Invalid data
-        }
-    }
-
-    const time = performance.now() - t0;
-    const mem = (process.memoryUsage().heapUsed - mem0) / 1024 / 1024;
-
-    return {
-        time: r(time),
-        'mem MB': r(mem),
-        'ops/ms': r(1000 / time),
-        successCount,
-    };
+async function benchZodyValidate<T>(schema: AnyZody, dataset: T[]) {
+    return timeLoop(dataset, (item) => schema.validate(item));
 }
 
 //----------------------------------------------------------------
@@ -520,181 +283,103 @@ async function main() {
         throw new Error('Run the script with --expose-gc to enable manual garbage collection');
     }
 
-    console.log('='.repeat(70));
-    console.log('Validator Benchmark: Stage 1 Decorators (Compiled) vs Zod Functional');
-    console.log('='.repeat(70));
+    const { zod, fromJsonSchema, enableCodeGen } = await import('@libs/zody');
+
+    console.log('='.repeat(78));
+    console.log('Validator Benchmark: zod/v4 vs zody/zod vs zody/z (jit off/on)');
+    console.log('='.repeat(78));
 
     console.table({
         time: `${new Date().toISOString().slice(0, 16).replace('T', ' ')}Z`,
         host: os.hostname(),
-        'reused iterations': ITERATIONS_REUSED,
-        'once iterations': ITERATIONS_ONCE,
-        'array size': ARRAY_SIZE,
+        'small schema validations': ITERATIONS_SMALL,
+        'complex schema validations': ITERATIONS_COMPLEX,
     });
 
-    const results = [];
+    const results: ({ test: string; variant: string } & BenchResult)[] = [];
+    const row = (test: string, label: string, res: BenchResult) => ({ test, variant: label, ...res });
 
-    // Test 1: Simple Object (Reused Schema)
-    console.log('\n--- Test 1: Simple Object (Reused Schema) ---');
-    console.log('Schema created once, parsed', ITERATIONS_REUSED, 'times');
+    //----------------------------------------------------------------
+    // Test A: Small schema (10 fields x 3-literal enum)
+    //----------------------------------------------------------------
+    console.log(`\n--- Test A: Small schema (${FIELD_COUNT} fields, 3-literal enum each) ---`);
+    console.log('Schema created once, validated', ITERATIONS_SMALL, 'times');
 
-    console.log('Testing Decorators (Compiled)...');
-    const decoratorSimple = await benchDecoratorSimple();
-    console.log('✓ Complete:', decoratorSimple);
+    console.log('Testing zod/v4...');
+    const smallZodV4Schema = buildSmallSchemaZodV4();
+    const smallZodV4 = await benchZodV4(smallZodV4Schema, smallDataset);
+    console.log('✓', smallZodV4);
+    results.push(row('Small schema', 'zod/v4', smallZodV4));
 
-    console.log('Testing Zod Functional (Interpreted)...');
-    const zodSimple = await benchZodSimple();
-    console.log('✓ Complete:', zodSimple);
+    console.log('Testing zody/zod (functional, interpreted)...');
+    const smallZodyFunctional = await benchZodyFunctional(buildSmallSchemaZody(zod), smallDataset);
+    console.log('✓', smallZodyFunctional);
+    results.push(row('Small schema', 'zody/zod', smallZodyFunctional));
 
-    results.push(
-        { test: 'Decorator (simple, compiled)', ...decoratorSimple },
-        { test: 'Zod (simple, interpreted)', ...zodSimple },
-    );
+    console.log('Testing zody/z, no jit (enableCodeGen(false))...');
+    enableCodeGen(false);
+    const smallZodyNoJit = await benchZodyValidate(buildSmallSchemaZody(zod), smallDataset);
+    console.log('✓', smallZodyNoJit);
+    results.push(row('Small schema', 'zody/z (no jit)', smallZodyNoJit));
 
-    // Test 1b: Decorator validate() with codegen enabled vs disabled
-    console.log('\n--- Test 1b: Decorator validate() — codegen enabled vs disabled ---');
-    console.log('Same reused schema, parsed', ITERATIONS_REUSED, 'times, with enableCodeGen(true/false)');
+    console.log('Testing zody/z, jit (enableCodeGen(true), default)...');
+    enableCodeGen(true);
+    const smallZodyJit = await benchZodyValidate(buildSmallSchemaZody(zod), smallDataset);
+    console.log('✓', smallZodyJit);
+    results.push(row('Small schema', 'zody/z (jit)', smallZodyJit));
 
-    console.log('Testing with enableCodeGen(true) (self-replacing new Function path)...');
-    const decoratorCodeGenOn = await benchDecoratorCodeGen(true);
-    console.log('✓ Complete:', decoratorCodeGenOn);
+    //----------------------------------------------------------------
+    // Test B: Complex schema (MCP CallToolResult)
+    //----------------------------------------------------------------
+    console.log('\n--- Test B: Complex schema (MCP CallToolResult, union of 5 content types) ---');
+    console.log('Schema created once, validated', ITERATIONS_COMPLEX, 'times');
 
-    console.log('Testing with enableCodeGen(false) (always-interpreted safeParse path)...');
-    const decoratorCodeGenOff = await benchDecoratorCodeGen(false);
-    console.log('✓ Complete:', decoratorCodeGenOff);
+    console.log('Testing zod/v4...');
+    const complexZodV4Schema = buildComplexSchemaZodV4();
+    const complexZodV4 = await benchZodV4(complexZodV4Schema, complexDataset);
+    console.log('✓', complexZodV4);
+    results.push(row('Complex schema', 'zod/v4', complexZodV4));
 
-    results.push(
-        { test: 'Decorator (codegen ON)', ...decoratorCodeGenOn },
-        { test: 'Decorator (codegen OFF)', ...decoratorCodeGenOff },
-    );
+    console.log('Testing zody/zod (functional, interpreted)...');
+    const complexZodyFunctional = await benchZodyFunctional(fromJsonSchema(callToolResultJsonSchema), complexDataset);
+    console.log('✓', complexZodyFunctional);
+    results.push(row('Complex schema', 'zody/zod', complexZodyFunctional));
 
-    // Test 2: Complex Nested Object (Reused Schema)
-    console.log('\n--- Test 2: Complex Nested Object (Reused Schema) ---');
-    console.log('Schema created once, parsed', ITERATIONS_REUSED, 'times');
+    console.log('Testing zody/z, no jit (enableCodeGen(false))...');
+    enableCodeGen(false);
+    const complexZodyNoJit = await benchZodyValidate(fromJsonSchema(callToolResultJsonSchema), complexDataset);
+    console.log('✓', complexZodyNoJit);
+    results.push(row('Complex schema', 'zody/z (no jit)', complexZodyNoJit));
 
-    console.log('Testing Decorators (Compiled)...');
-    const decoratorComplex = await benchDecoratorComplex();
-    console.log('✓ Complete:', decoratorComplex);
+    console.log('Testing zody/z, jit (enableCodeGen(true), default)...');
+    enableCodeGen(true);
+    const complexZodyJit = await benchZodyValidate(fromJsonSchema(callToolResultJsonSchema), complexDataset);
+    console.log('✓', complexZodyJit);
+    results.push(row('Complex schema', 'zody/z (jit)', complexZodyJit));
 
-    console.log('Testing Zod Functional (Interpreted)...');
-    const zodComplex = await benchZodComplex();
-    console.log('✓ Complete:', zodComplex);
-
-    results.push(
-        { test: 'Decorator (complex, compiled)', ...decoratorComplex },
-        { test: 'Zod (complex, interpreted)', ...zodComplex },
-    );
-
-    // Test 3: Create Once Pattern
-    console.log('\n--- Test 3: Create Once (React Pattern) ---');
-    console.log('Schema created + parsed', ITERATIONS_ONCE, 'times');
-
-    console.log('Testing Decorators...');
-    const decoratorOnce = await benchDecoratorCreateOnce();
-    console.log('✓ Complete:', decoratorOnce);
-
-    console.log('Testing Zod Functional (Interpreted)...');
-    const zodOnce = await benchZodCreateOnce();
-    console.log('✓ Complete:', zodOnce);
-
-    results.push(
-        { test: 'Decorator (create once)', ...decoratorOnce },
-        { test: 'Zod (create once, interpreted)', ...zodOnce },
-    );
-
-    // Test 4: Array of Objects
-    console.log('\n--- Test 4: Array of Objects ---');
-    console.log('1000 arrays, each with', ARRAY_SIZE, 'objects');
-
-    console.log('Testing Decorators (Compiled)...');
-    const decoratorArray = await benchDecoratorArray();
-    console.log('✓ Complete:', decoratorArray);
-
-    console.log('Testing Zod Functional (Interpreted)...');
-    const zodArray = await benchZodArray();
-    console.log('✓ Complete:', zodArray);
-
-    results.push(
-        { test: 'Decorator (array, compiled)', ...decoratorArray },
-        { test: 'Zod (array, interpreted)', ...zodArray },
-    );
-
+    //----------------------------------------------------------------
     // Summary
-    console.log(`\n${'='.repeat(70)}`);
+    //----------------------------------------------------------------
+    console.log(`\n${'='.repeat(78)}`);
     console.log('RESULTS SUMMARY');
-    console.log('='.repeat(70));
+    console.log('='.repeat(78));
     console.table(results);
 
-    // Analysis
-    console.log(`\n${'='.repeat(70)}`);
-    console.log('PERFORMANCE ANALYSIS');
-    console.log('='.repeat(70));
+    console.log(`\n${'='.repeat(78)}`);
+    console.log('SPEEDUP vs zod/v4 (ops/ms ratio, >1 = faster than real zod)');
+    console.log('='.repeat(78));
 
-    const speedup = (decorator: { time: number }, zod: { time: number }) => r(zod.time / decorator.time);
+    const speedup = (against: BenchResult, baseline: BenchResult) => r(against['ops/ms'] / baseline['ops/ms']);
 
-    console.log('\nSimple Object (Reused):');
-    console.log('  Decorator (compiled):', decoratorSimple['ops/ms'], 'ops/ms');
-    console.log('  Zod (interpreted):', zodSimple['ops/ms'], 'ops/ms');
-    console.log(
-        '  → Decorator is',
-        speedup(decoratorSimple, zodSimple),
-        `x faster${speedup(decoratorSimple, zodSimple) > 1 ? ' ✓' : ''}`,
-    );
+    console.log('\nSmall schema:');
+    console.log('  zody/zod       :', speedup(smallZodyFunctional, smallZodV4), 'x');
+    console.log('  zody/z (no jit):', speedup(smallZodyNoJit, smallZodV4), 'x');
+    console.log('  zody/z (jit)   :', speedup(smallZodyJit, smallZodV4), 'x');
 
-    console.log('\nDecorator codegen ON vs OFF (same reused schema):');
-    console.log('  codegen ON (new Function):', decoratorCodeGenOn['ops/ms'], 'ops/ms');
-    console.log('  codegen OFF (interpreted):', decoratorCodeGenOff['ops/ms'], 'ops/ms');
-    console.log(
-        '  → codegen ON is',
-        r(decoratorCodeGenOff.time / decoratorCodeGenOn.time),
-        `x faster${decoratorCodeGenOn.time < decoratorCodeGenOff.time ? ' ✓' : ''}`,
-    );
-
-    console.log('\nComplex Object (Reused):');
-    console.log('  Decorator (compiled):', decoratorComplex['ops/ms'], 'ops/ms');
-    console.log('  Zod (interpreted):', zodComplex['ops/ms'], 'ops/ms');
-    console.log(
-        '  → Decorator is',
-        speedup(decoratorComplex, zodComplex),
-        `x faster${speedup(decoratorComplex, zodComplex) > 1 ? ' ✓' : ''}`,
-    );
-
-    console.log('\nCreate Once Pattern:');
-    console.log('  Decorator:', decoratorOnce['ops/ms'], 'ops/ms');
-    console.log('  Zod (interpreted):', zodOnce['ops/ms'], 'ops/ms');
-    console.log(
-        '  → Zod is',
-        r(decoratorOnce.time / zodOnce.time),
-        `x faster${decoratorOnce.time > zodOnce.time ? ' ✓' : ''}`,
-    );
-
-    console.log('\nArray Validation:');
-    console.log('  Decorator (compiled):', decoratorArray['ops/ms'], 'ops/ms');
-    console.log('  Zod (interpreted):', zodArray['ops/ms'], 'ops/ms');
-    console.log(
-        '  → Decorator is',
-        speedup(decoratorArray, zodArray),
-        `x faster${speedup(decoratorArray, zodArray) > 1 ? ' ✓' : ''}`,
-    );
-
-    console.log(`\n${'='.repeat(70)}`);
-    console.log('CONCLUSION');
-    console.log('='.repeat(70));
-
-    const totalDecoratorTime = decoratorSimple.time + decoratorComplex.time + decoratorOnce.time + decoratorArray.time;
-    const totalZodTime = zodSimple.time + zodComplex.time + zodOnce.time + zodArray.time;
-
-    console.log(`Total Decorator time: ${r(totalDecoratorTime)}ms`);
-    console.log(`Total Zod time: ${r(totalZodTime)}ms`);
-    console.log(`Overall speedup: ${r(totalZodTime / totalDecoratorTime)}x`);
-
-    if (totalDecoratorTime < totalZodTime) {
-        console.log('\n✓ Stage 1 compilation provides measurable performance gains');
-        console.log('  → Compilation complexity is justified');
-    } else {
-        console.log('\n✗ Stage 1 compilation does not provide performance gains');
-        console.log('  → Consider Stage 2 source generation or accept interpreted performance');
-    }
+    console.log('\nComplex schema:');
+    console.log('  zody/zod       :', speedup(complexZodyFunctional, complexZodV4), 'x');
+    console.log('  zody/z (no jit):', speedup(complexZodyNoJit, complexZodV4), 'x');
+    console.log('  zody/z (jit)   :', speedup(complexZodyJit, complexZodV4), 'x');
 }
 
 main().catch(console.error);

@@ -4,10 +4,11 @@
 
 ## Why This Template?
 
-- ⚡ **Faster** - Custom JSON parser with BigInt support, optimized validator (2-10x faster than TypeBox)
+- ⚡ **Faster** - Custom JSON parser with BigInt support, and **zody**, a validation library that compiles schemas to specialized JS (2-10x faster than TypeBox)
 - 🔒 **Secure** - Prototype pollution prevention, rate limiting, CORS, Helmet, vulnerability scanning, no secrets in code
 - 🎯 **Zero deps** - Only official Fastify packages, custom validator/immutable/utilities
 - 🛠️ **Modern tools** - Bun runtime (test/build/dev), Biome linter, native Node test APIs
+- 🔑 **Auth built in** - JWT middleware with per-route `requireAuth`, plus OpenTelemetry tracing
 - 📦 **Complete** - HTTP + CLI + clustering + Docker + CI/CD + OpenAPI/Swagger
 - 🤖 **Claude-ready** - Full CLAUDE.md with coding standards and workflows
 
@@ -54,8 +55,39 @@ bun run dev
 
 ### Performance
 - **Custom JSON Parser** - BigInt support, prototype pollution prevention, SharedArrayBuffer handling
-- **Optimized Validator** - 2-10x faster than TypeBox, Zod-like API, zero dependencies
+- **zody Validation** - compiles schemas to specialized closures/generated JS; see below
 - **Immutable Objects** - Frozen data structures with runtime safety
+
+### zody — the validation layer
+
+`packages/libs/zody` is the piece that makes this template different. One schema definition
+drives request validation, response serialization, and the OpenAPI document — with no
+runtime dependency.
+
+Two equivalent authoring styles, both producing the same validator:
+
+```ts
+// Functional — a plain value, inferred types
+const ErrorResponse = zod.object({
+    message: zod.string().describe('Error message'),
+    availableLocales: zod.array(zod.string()).optional().describe('Supported locales'),
+});
+type ErrorResponse = zod.Infer<typeof ErrorResponse>;
+
+// Decorator — class-based, same engine
+@z.Schema()
+class NumberFormatRequest extends ZodySchema {
+    @z.number number!: number;
+    @z.string.regex(IETF_BCP47_PATTERN) locale!: string;
+}
+```
+
+- **Compiles, doesn't interpret** - `validate()` replaces itself with generated code on first
+  call, so the hot path is specialized to the schema rather than walking a node tree
+- **JSON Schema both ways** - `defs()` emits draft-07 for Swagger; `fromJsonSchema()` reads it back
+- **Fastify type provider** - schemas flow into route generics, so handlers get typed
+  `request.body` / `request.query` with no casts
+- **Zod-compatible surface** - the `zod` namespace mirrors the familiar API for easy migration
 
 ### Security
 - **Built-in Protection** - Rate limiting, CORS, Helmet, CSRF, prototype pollution prevention
@@ -129,7 +161,7 @@ bun run dev
 
 # Run HTTP server
 npm run start
-# or: bun src/app.ts
+# or: bun apps/http.template/instance.ts
 
 # Run with hot reload
 npm run dev
@@ -156,13 +188,22 @@ npm run publish:npm
 ## Project Structure
 
 ```
-src/              - Application source code
+apps/
+  http.template/  - Fastify server: api/, middleware/, frontend/
+  cli.template/   - CLI entry point and commands
+packages/
+  libs/zody/      - Validation + JSON Schema (no dependencies)
+  libs/utils/     - JSON parse, immutable, logger, jwt, apm, shell
+  libs/cluster/   - Multi-core clustering
+  libs/api-client/- Typed client generated from route schemas
+  components/     - Shared UI components
+  config/         - Shared configuration
 ci/               - Integration tests
-script/          - Build and release scripts
-.vscode/          - VSCode debug configurations
+scripts/          - Build, test and release scripts
+docs/             - Project documentation
 ```
 
 ## Requirements
 
-- Bun >= 1.0
+- Bun >= 1.3.0
 - Docker (for builds)
