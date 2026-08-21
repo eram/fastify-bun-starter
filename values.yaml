@@ -1,8 +1,0 @@
-global:
-  backend:
-    enabled: false
-  ingress:
-    site: {BYOC_ENDPOINT}
-
-clusterId: "llm-gator-groundcoverllm-gator-groundcover" # CLI will automatically detect cluster name
-env: "eram-lap26-1" # Add it to differentiate between different environments
